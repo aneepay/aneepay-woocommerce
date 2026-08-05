@@ -137,9 +137,10 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 		$webhook_url = rest_url( 'aneepay/v1/webhook' );
 
 		echo '<h2>' . esc_html__( 'Webhook Endpoint', 'aneepay-crypto-gateway' ) . '</h2>';
-		echo '<p>' . esc_html__( 'Set this URL as your STATUS_URL (webhook) in AneePay so your dApp reports the transaction result directly to your store:', 'aneepay-crypto-gateway' ) . '</p>';
+		echo '<p>' . esc_html__( 'Configure this URL as your STATUS_URL (webhook) in the AneePay account panel. AneePay pushes the transaction result here to keep order statuses in sync.', 'aneepay-crypto-gateway' ) . '</p>';
 		echo '<p><code>' . esc_url( $webhook_url ) . '</code></p>';
-		echo '<p>' . esc_html__( 'If you use the AneePay-hosted status URL instead, payment results are applied to the order automatically by polling the payment status as a fallback.', 'aneepay-crypto-gateway' ) . '</p>';
+		echo '<p>' . esc_html__( 'Configure SUCCESS_URL / FAIL_URL in the same panel to return customers to the store after the hosted checkout page.', 'aneepay-crypto-gateway' ) . '</p>';
+		echo '<p>' . esc_html__( 'As a fallback the plugin also polls the payment status periodically.', 'aneepay-crypto-gateway' ) . '</p>';
 	}
 
 	/**
@@ -164,12 +165,23 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 
 		$created = $this->api_handler->create_payment( $amount, $order );
 
-		$order->add_meta_data( '_aneepay_payment_html', $created['html'], true );
 		$order->add_meta_data( '_aneepay_payment_id', $created['payment_id'], true );
+		$order->add_meta_data( '_aneepay_operation_id', $created['operation_id'], true );
 		$order->add_meta_data( '_aneepay_token', $this->api_handler->get_token(), true );
 		$order->add_meta_data( '_aneepay_network', $this->api_handler->get_network(), true );
 		$order->add_meta_data( '_aneepay_sandbox', $this->api_handler->is_sandbox() ? 'yes' : 'no', true );
 		$order->add_meta_data( '_aneepay_payment_status', 'pending', true );
+
+		if ( ! empty( $created['checkout_url'] ) ) {
+			// Preferred flow: redirect to the hosted checkout page on aneepay.com.
+			// success/fail redirects and the status_url webhook are configured
+			// in the AneePay account panel.
+			$order->add_meta_data( '_aneepay_checkout_url', $created['checkout_url'], true );
+		} else {
+			// Fallback: keep the returned HTML to render on the thank-you page.
+			$order->add_meta_data( '_aneepay_payment_html', $created['html'], true );
+		}
+
 		$order->save();
 
 		$order->update_status(
@@ -182,6 +194,13 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 		);
 
 		wc_reduce_stock_levels( $order_id );
+
+		if ( ! empty( $created['checkout_url'] ) ) {
+			return array(
+				'result'   => 'success',
+				'redirect' => $created['checkout_url'],
+			);
+		}
 
 		return array(
 			'result'   => 'success',

@@ -188,10 +188,14 @@ class AneePay_Crypto_API_Handler {
 	}
 
 	/**
-	 * Parse the create payment response (text/html page).
+	 * Parse the create payment response.
+	 *
+	 * Accepts two response shapes:
+	 *  - JSON: { id, operation_id, checkout_url [, html] }  (preferred, redirect flow)
+	 *  - HTML: fully rendered hosted checkout page            (embed fallback)
 	 *
 	 * @param array|WP_Error $response wp_remote_post result.
-	 * @return array{html:string, payment_id:?string}
+	 * @return array{html:string, payment_id:?string, operation_id:?string, checkout_url:?string}
 	 * @throws RuntimeException When the request failed or returned an error status.
 	 */
 	protected function parse_create_response( $response ) {
@@ -200,8 +204,8 @@ class AneePay_Crypto_API_Handler {
 			throw new RuntimeException( __( 'Unable to connect to the AneePay payment service.', 'aneepay-crypto-gateway' ) );
 		}
 
-		$code   = (int) wp_remote_retrieve_response_code( $response );
-		$body   = wp_remote_retrieve_body( $response );
+		$code    = (int) wp_remote_retrieve_response_code( $response );
+		$body    = wp_remote_retrieve_body( $response );
 		$headers = wp_remote_retrieve_headers( $response );
 
 		$this->log( 'create_payment', 'HTTP ' . $code );
@@ -211,12 +215,47 @@ class AneePay_Crypto_API_Handler {
 			throw new RuntimeException( $this->extract_error_message( $code, $body ) );
 		}
 
-		$payment_id = $this->extract_payment_id( $headers );
+		$payment_id   = $this->extract_payment_id( $headers );
+		$operation_id = $this->extract_header( $headers, 'x-operation-id' );
+		$checkout_url = $this->extract_header( $headers, 'x-checkout-url' );
+		$html         = (string) $body;
+
+		$json = json_decode( $body, true );
+
+		if ( is_array( $json ) ) {
+			$checkout_url = ! empty( $json['checkout_url'] ) ? esc_url_raw( (string) $json['checkout_url'] ) : $checkout_url;
+			$payment_id   = ! empty( $json['id'] ) ? sanitize_text_field( (string) $json['id'] ) : $payment_id;
+			$operation_id = isset( $json['operation_id'] ) ? sanitize_text_field( (string) $json['operation_id'] ) : $operation_id;
+			$html         = isset( $json['html'] ) ? (string) $json['html'] : '';
+		}
 
 		return array(
-			'html'       => (string) $body,
-			'payment_id' => $payment_id,
+			'html'         => $html,
+			'payment_id'   => $payment_id,
+			'operation_id' => $operation_id,
+			'checkout_url' => $checkout_url,
 		);
+	}
+
+	/**
+	 * Read a single response header.
+	 *
+	 * @param array  $headers Response headers.
+	 * @param string $name    Header name (lowercase).
+	 * @return string|null
+	 */
+	protected function extract_header( $headers, $name ) {
+		if ( ! isset( $headers[ $name ] ) ) {
+			return null;
+		}
+
+		$value = $headers[ $name ];
+
+		if ( is_array( $value ) ) {
+			$value = reset( $value );
+		}
+
+		return '' === (string) $value ? null : sanitize_text_field( (string) $value );
 	}
 
 	/**
