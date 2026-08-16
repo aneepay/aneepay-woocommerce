@@ -78,7 +78,7 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 				'title'       => __( 'Test/Sandbox Mode', 'aneepay-crypto-gateway' ),
 				'type'        => 'checkbox',
 				'label'       => __( 'Enable sandbox mode (Amoy testnet)', 'aneepay-crypto-gateway' ),
-				'description' => __( 'When enabled, payments are created on the Polygon Amoy testnet and the is_safe check is bypassed.', 'aneepay-crypto-gateway' ),
+				'description' => __( 'When enabled, payments are created on the Polygon Amoy testnet with USDC and the is_safe check is bypassed.', 'aneepay-crypto-gateway' ),
 				'default'     => 'no',
 				'desc_tip'    => true,
 			),
@@ -92,7 +92,7 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 			'account_id'  => array(
 				'title'       => __( 'Account ID', 'aneepay-crypto-gateway' ),
 				'type'        => 'text',
-				'description' => __( 'Your AneePay account UUID. Recommended together with the Origin header.', 'aneepay-crypto-gateway' ),
+				'description' => __( 'Your AneePay account UUID. Required — sent in the X-Account-Id header for every API request.', 'aneepay-crypto-gateway' ),
 				'default'     => '',
 				'desc_tip'    => true,
 			),
@@ -111,7 +111,7 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 			'webhook_secret' => array(
 				'title'       => __( 'Webhook Secret', 'aneepay-crypto-gateway' ),
 				'type'        => 'password',
-				'description' => __( 'Optional shared secret used to authenticate incoming webhook calls to the endpoint below. Leave empty to accept unsigned requests (not recommended).', 'aneepay-crypto-gateway' ),
+				'description' => __( 'Your AneePay webhook secret used to verify the X-AneePay-Signature (HMAC-SHA256) on incoming webhook calls. Strongly recommended.', 'aneepay-crypto-gateway' ),
 				'default'     => '',
 				'desc_tip'    => true,
 			),
@@ -135,16 +135,30 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 		parent::admin_options();
 
 		$webhook_url = rest_url( 'aneepay/v1/webhook' );
+		$success_url = home_url( '/?aneepay=success' );
+		$fail_url    = home_url( '/?aneepay=fail' );
 
-		echo '<h2>' . esc_html__( 'Webhook Endpoint', 'aneepay-crypto-gateway' ) . '</h2>';
-		echo '<p>' . esc_html__( 'Configure this URL as your STATUS_URL (webhook) in the AneePay account panel. AneePay pushes the transaction result here to keep order statuses in sync.', 'aneepay-crypto-gateway' ) . '</p>';
-		echo '<p><code>' . esc_url( $webhook_url ) . '</code></p>';
-		echo '<p>' . esc_html__( 'Configure SUCCESS_URL / FAIL_URL in the same panel to return customers to the store after the hosted checkout page.', 'aneepay-crypto-gateway' ) . '</p>';
+		echo '<h2>' . esc_html__( 'AneePay Endpoints', 'aneepay-crypto-gateway' ) . '</h2>';
+		echo '<p>' . esc_html__( 'Configure these URLs in the AneePay account panel:', 'aneepay-crypto-gateway' ) . '</p>';
+
+		echo '<p><strong>' . esc_html__( 'STATUS_URL (webhook)', 'aneepay-crypto-gateway' ) . '</strong><br><code>' . esc_url( $webhook_url ) . '</code></p>';
+		echo '<p>' . esc_html__( 'AneePay pushes the transaction result here to keep order statuses in sync.', 'aneepay-crypto-gateway' ) . '</p>';
+
+		echo '<p><strong>' . esc_html__( 'SUCCESS_URL', 'aneepay-crypto-gateway' ) . '</strong><br><code>' . esc_url( $success_url ) . '</code></p>';
+		echo '<p>' . esc_html__( 'Customers land here after a successful payment.', 'aneepay-crypto-gateway' ) . '</p>';
+
+		echo '<p><strong>' . esc_html__( 'FAIL_URL', 'aneepay-crypto-gateway' ) . '</strong><br><code>' . esc_url( $fail_url ) . '</code></p>';
+		echo '<p>' . esc_html__( 'Customers land here when the payment is cancelled or fails.', 'aneepay-crypto-gateway' ) . '</p>';
+
 		echo '<p>' . esc_html__( 'As a fallback the plugin also polls the payment status periodically.', 'aneepay-crypto-gateway' ) . '</p>';
 	}
 
 	/**
 	 * Process the payment on checkout.
+	 *
+	 * Creates the payment via the AneePay API and redirects the customer to
+	 * the hosted checkout page. SUCCESS_URL / FAIL_URL / STATUS_URL are
+	 * configured in the AneePay account panel.
 	 *
 	 * @param int $order_id Order ID.
 	 * @return array
@@ -171,16 +185,7 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 		$order->add_meta_data( '_aneepay_network', $this->api_handler->get_network(), true );
 		$order->add_meta_data( '_aneepay_sandbox', $this->api_handler->is_sandbox() ? 'yes' : 'no', true );
 		$order->add_meta_data( '_aneepay_payment_status', 'pending', true );
-
-		if ( ! empty( $created['checkout_url'] ) ) {
-			// Preferred flow: redirect to the hosted checkout page on aneepay.com.
-			// success/fail redirects and the status_url webhook are configured
-			// in the AneePay account panel.
-			$order->add_meta_data( '_aneepay_checkout_url', $created['checkout_url'], true );
-		} else {
-			// Fallback: keep the returned HTML to render on the thank-you page.
-			$order->add_meta_data( '_aneepay_payment_html', $created['html'], true );
-		}
+		$order->add_meta_data( '_aneepay_checkout_url', $created['checkout_url'], true );
 
 		$order->save();
 
@@ -189,27 +194,24 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 			sprintf(
 				/* translators: %s: payment id */
 				__( 'Awaiting crypto payment. AneePay payment ID: %s', 'aneepay-crypto-gateway' ),
-				$created['payment_id'] ? $created['payment_id'] : __( 'assigned by AneePay', 'aneepay-crypto-gateway' )
+				$created['payment_id']
 			)
 		);
 
 		wc_reduce_stock_levels( $order_id );
 
-		if ( ! empty( $created['checkout_url'] ) ) {
-			return array(
-				'result'   => 'success',
-				'redirect' => $created['checkout_url'],
-			);
-		}
+		// Track the order so the store-side success/fail pages (configured in
+		// the AneePay panel as SUCCESS_URL / FAIL_URL) can identify it.
+		wc_setcookie( 'aneepay_order', (string) $order_id, time() + HOUR_IN_SECONDS, is_ssl() );
 
 		return array(
 			'result'   => 'success',
-			'redirect' => $this->get_return_url( $order ),
+			'redirect' => $created['checkout_url'],
 		);
 	}
 
 	/**
-	 * Render the hosted AneePay checkout page on the thank-you / view-order page.
+	 * Render the payment status block on the thank-you / view-order page.
 	 *
 	 * @param int $order_id Order ID.
 	 * @return void
@@ -223,21 +225,12 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 
 		$status = $order->get_meta( '_aneepay_payment_status', true );
 
-		if ( 'success' === $status || 'cancelled' === $status || 'failed' === $status ) {
+		if ( in_array( $status, array( 'success', 'cancelled', 'failed' ), true ) ) {
 			return;
 		}
 
-		$html = $order->get_meta( '_aneepay_payment_html', true );
-
 		echo '<div class="aneepay-payment" data-order-id="' . esc_attr( $order_id ) . '" data-payment-status="' . esc_attr( (string) $status ) . '">';
-
-		if ( ! empty( $html ) ) {
-			// The API returns a fully rendered, self-contained checkout page (QR code + MetaMask deeplink).
-			echo $html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Sanitised by AneePay.
-		} else {
-			esc_html_e( 'Your payment page is being prepared. Please wait...', 'aneepay-crypto-gateway' );
-		}
-
+		esc_html_e( 'Waiting for the payment to be confirmed on the blockchain. This page updates automatically.', 'aneepay-crypto-gateway' );
 		echo '</div>';
 	}
 }
@@ -245,24 +238,18 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 /**
  * Handle an incoming status notification.
  *
- * The AneePay dApp calls this endpoint (its STATUS_URL) with the following
- * JSON payload after a transaction completes:
+ * AneePay pushes this payload to the configured STATUS_URL after a payment
+ * is confirmed on-chain (only for success):
  * {
- *   "operationId": 123,          // int payment id
- *   "description": "Order #123", // order reference passed at creation
- *   "amount": "19.50",
- *   "token": "0x...",            // token contract address
- *   "recipient": "0x...",
- *   "status": "success|failed",
- *   "timestamp": "...",
- *   "chain_id": 137 | 20697,
- *   "txHash": "0x...",
- *   "fee": "...", "netAmount": "...", "blockNumber": 123, "gasUsed": "...",
- *   "error": "...", "code": "..."
+ *   "operation_id": 1025366559013960798969014288963858567168, // int(payment_id)
+ *   "status": "success",
+ *   "timestamp": 1755262800.0
  * }
  *
- * The endpoint also accepts "payment_id" (payment UUID) and/or "order_id"
- * as an alternative lookup, for maximum compatibility.
+ * The signature (X-AneePay-Signature) is an HMAC-SHA256 hex digest of the
+ * raw request body using the webhook_secret. Payloads sent by the legacy
+ * dApp confirm endpoint (payment_id / order_id / description / operationId)
+ * are still accepted for compatibility.
  *
  * @param WP_REST_Request $request REST request.
  * @return WP_REST_Response
@@ -272,16 +259,16 @@ function aneepay_handle_webhook( $request ) {
 	$secret  = (string) $gateway->get_option( 'webhook_secret' );
 
 	$signature = $request->get_header( 'X-AneePay-Signature' );
+	$body      = (string) $request->get_body();
 
 	if ( '' !== $secret ) {
-		$payload = (string) $request->get_body();
-
-		if ( empty( $signature ) || ! hash_equals( hash_hmac( 'sha256', $payload, $secret ), $signature ) ) {
+		if ( empty( $signature ) || ! hash_equals( hash_hmac( 'sha256', $body, $secret ), $signature ) ) {
 			return new WP_REST_Response( array( 'success' => false ), 401 );
 		}
 	}
 
-	$params = $request->get_json_params();
+	// JSON_BIGINT_AS_STRING keeps operation_id (a 128-bit integer) exact.
+	$params = json_decode( $body, true, 512, JSON_BIGINT_AS_STRING );
 
 	if ( ! is_array( $params ) ) {
 		return new WP_REST_Response( array( 'success' => false ), 400 );
@@ -316,8 +303,9 @@ function aneepay_handle_webhook( $request ) {
  * Lookup order:
  * 1. explicit order_id
  * 2. payment_id (UUID) matching _aneepay_payment_id
- * 3. operationId (int) matching _aneepay_operation_id
- * 4. description "Order #N" parsing
+ * 3. operation_id (int(payment_id)) matching _aneepay_operation_id
+ * 4. operation_id decoded back to the payment UUID
+ * 5. description "Order #N" parsing
  *
  * @param array $params Webhook payload.
  * @return WC_Order|null
@@ -338,11 +326,27 @@ function aneepay_resolve_order( $params ) {
 		}
 	}
 
-	if ( isset( $params['operationId'] ) ) {
-		$operation_id = sanitize_text_field( $params['operationId'] );
-		$found        = aneepay_find_order_by_meta( '_aneepay_operation_id', $operation_id );
+	$operation_id = '';
+
+	if ( isset( $params['operation_id'] ) ) {
+		$operation_id = sanitize_text_field( (string) $params['operation_id'] );
+	} elseif ( isset( $params['operationId'] ) ) {
+		$operation_id = sanitize_text_field( (string) $params['operationId'] );
+	}
+
+	if ( '' !== $operation_id ) {
+		$found = aneepay_find_order_by_meta( '_aneepay_operation_id', $operation_id );
 		if ( $found ) {
 			return $found;
+		}
+
+		$uuid = aneepay_operation_id_to_uuid( $operation_id );
+
+		if ( null !== $uuid ) {
+			$found = aneepay_find_order_by_meta( '_aneepay_payment_id', $uuid );
+			if ( $found ) {
+				return $found;
+			}
 		}
 	}
 
@@ -358,6 +362,60 @@ function aneepay_resolve_order( $params ) {
 	}
 
 	return null;
+}
+
+/**
+ * Decode an AneePay operation_id back to the payment UUID.
+ *
+ * operation_id is the payment UUID encoded as a 128-bit unsigned integer
+ * (int(payment.id)); the mapping is bijective:
+ * uuid.UUID(int=operation_id) === payment_id.
+ *
+ * @param string|int $operation_id Decimal operation id.
+ * @return string|null Payment UUID, or null when not decodable.
+ */
+function aneepay_operation_id_to_uuid( $operation_id ) {
+	$decimal = trim( (string) $operation_id );
+
+	if ( '' === $decimal || ! preg_match( '/^\d+$/', $decimal ) ) {
+		return null;
+	}
+
+	$hex = '';
+	$num = ltrim( $decimal, '0' );
+
+	if ( '' === $num ) {
+		$num = '0';
+	}
+
+	while ( '0' !== $num ) {
+		$remainder = 0;
+		$quotient  = '';
+
+		for ( $i = 0, $len = strlen( $num ); $i < $len; $i++ ) {
+			$current   = ( $remainder * 10 ) + (int) $num[ $i ];
+			$remainder = $current % 16;
+			$quotient .= (int) ( $current / 16 );
+		}
+
+		$hex = dechex( $remainder ) . $hex;
+		$num = ltrim( $quotient, '0' );
+
+		if ( '' === $num ) {
+			$num = '0';
+		}
+	}
+
+	$hex = str_pad( $hex, 32, '0', STR_PAD_LEFT );
+
+	return sprintf(
+		'%s-%s-%s-%s-%s',
+		substr( $hex, 0, 8 ),
+		substr( $hex, 8, 4 ),
+		substr( $hex, 12, 4 ),
+		substr( $hex, 16, 4 ),
+		substr( $hex, 20, 12 )
+	);
 }
 
 /**
@@ -525,11 +583,11 @@ function aneepay_apply_payment_status( $order, $status, $data = array() ) {
 			if ( ! $order->is_paid() ) {
 				$note = __( 'AneePay: payment confirmed.', 'aneepay-crypto-gateway' );
 
-				if ( ! empty( $data['txHash'] ) ) {
+				if ( ! empty( $data['operation_id'] ) ) {
 					$note .= ' ' . sprintf(
-						/* translators: %s: transaction hash */
-						__( 'Tx: %s', 'aneepay-crypto-gateway' ),
-						sanitize_text_field( $data['txHash'] )
+						/* translators: %s: AneePay operation id */
+						__( 'Operation ID: %s', 'aneepay-crypto-gateway' ),
+						sanitize_text_field( (string) $data['operation_id'] )
 					);
 				}
 

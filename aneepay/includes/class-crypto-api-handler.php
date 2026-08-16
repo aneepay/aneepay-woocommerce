@@ -93,12 +93,14 @@ class AneePay_Crypto_API_Handler {
 	}
 
 	/**
-	 * Build the API base URL with an optional sandbox query parameter.
+	 * Build a full API URL for the given path, appending the sandbox
+	 * query parameter when test mode is enabled.
 	 *
+	 * @param string $path Path (e.g. "payments/").
 	 * @return string
 	 */
-	protected function api_base_url() {
-		$url = trailingslashit( ANEEPAY_API_BASE );
+	protected function api_url( $path ) {
+		$url = trailingslashit( ANEEPAY_API_BASE ) . ltrim( $path, '/' );
 
 		if ( $this->is_sandbox() ) {
 			$url = add_query_arg( 'sandbox', 'yes', $url );
@@ -119,9 +121,15 @@ class AneePay_Crypto_API_Handler {
 	/**
 	 * Token symbol expected by the API (usdt|usdc|dai).
 	 *
+	 * In sandbox mode the API forces the token to usdc.
+	 *
 	 * @return string
 	 */
 	public function get_token() {
+		if ( $this->is_sandbox() ) {
+			return 'usdc';
+		}
+
 		$token = strtolower( (string) $this->gateway->get_option( 'token', 'usdt' ) );
 		return in_array( $token, array( 'usdt', 'usdc', 'dai' ), true ) ? $token : 'usdt';
 	}
@@ -129,6 +137,7 @@ class AneePay_Crypto_API_Handler {
 	/**
 	 * Standard request args for AneePay API calls.
 	 *
+	 * @param array|null $body Optional JSON payload.
 	 * @return array
 	 */
 	protected function request_args( $body = null ) {
@@ -136,6 +145,7 @@ class AneePay_Crypto_API_Handler {
 			'headers' => array(
 				'Content-Type' => 'application/json',
 				'Accept'       => 'application/json',
+				'X-Account-Id' => $this->get_account_id(),
 				'Origin'       => $this->get_origin(),
 			),
 			'timeout' => 30,
@@ -149,14 +159,20 @@ class AneePay_Crypto_API_Handler {
 	}
 
 	/**
-	 * Create a standard payment and return the hosted checkout HTML.
+	 * Create a standard payment and return the hosted checkout URL.
 	 *
-	 * @param float|string $amount       Order amount.
-	 * @param WC_Order     $order        Order object.
-	 * @return array{html:string, payment_id:?string}
-	 * @throws RuntimeException When the API request fails.
+	 * @param float|string $amount Order amount.
+	 * @param WC_Order     $order  Order object.
+	 * @return array{payment_id:string, operation_id:string, checkout_url:string, status:string}
+	 * @throws RuntimeException When the API request fails or the Account ID is missing.
 	 */
 	public function create_payment( $amount, $order ) {
+		$account_id = $this->get_account_id();
+
+		if ( '' === $account_id ) {
+			throw new RuntimeException( __( 'AneePay Account ID is not configured. Please set it in the gateway settings.', 'aneepay-crypto-gateway' ) );
+		}
+
 		$amount = round( (float) $amount, 2 );
 		$amount = number_format( $amount, 2, '.', '' );
 
@@ -171,14 +187,8 @@ class AneePay_Crypto_API_Handler {
 			),
 		);
 
-		$account_id = $this->get_account_id();
-		if ( ! empty( $account_id ) ) {
-			$payload['account_id'] = $account_id;
-		}
-
-		$url  = $this->api_base_url() . 'payments/';
+		$url  = $this->api_url( 'payments/' );
 		$args = $this->request_args( $payload );
-		$args['headers']['Accept'] = 'text/html';
 
 		$this->log( 'create_payment', 'POST ' . $url . ' body=' . wp_json_encode( $payload ) );
 
@@ -190,12 +200,13 @@ class AneePay_Crypto_API_Handler {
 	/**
 	 * Parse the create payment response.
 	 *
-	 * Accepts two response shapes:
-	 *  - JSON: { id, operation_id, checkout_url [, html] }  (preferred, redirect flow)
-	 *  - HTML: fully rendered hosted checkout page            (embed fallback)
+	 * The API always answers with JSON:
+	 * { "id", "operation_id", "status", "checkout_url" }.
+	 *
+	 * JSON_BIGINT_AS_STRING keeps operation_id (a 128-bit integer) exact.
 	 *
 	 * @param array|WP_Error $response wp_remote_post result.
-	 * @return array{html:string, payment_id:?string, operation_id:?string, checkout_url:?string}
+	 * @return array{payment_id:string, operation_id:string, checkout_url:string, status:string}
 	 * @throws RuntimeException When the request failed or returned an error status.
 	 */
 	protected function parse_create_response( $response ) {
@@ -204,9 +215,8 @@ class AneePay_Crypto_API_Handler {
 			throw new RuntimeException( __( 'Unable to connect to the AneePay payment service.', 'aneepay-crypto-gateway' ) );
 		}
 
-		$code    = (int) wp_remote_retrieve_response_code( $response );
-		$body    = wp_remote_retrieve_body( $response );
-		$headers = wp_remote_retrieve_headers( $response );
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$body = wp_remote_retrieve_body( $response );
 
 		$this->log( 'create_payment', 'HTTP ' . $code );
 
@@ -215,73 +225,29 @@ class AneePay_Crypto_API_Handler {
 			throw new RuntimeException( $this->extract_error_message( $code, $body ) );
 		}
 
-		$payment_id   = $this->extract_payment_id( $headers );
-		$operation_id = $this->extract_header( $headers, 'x-operation-id' );
-		$checkout_url = $this->extract_header( $headers, 'x-checkout-url' );
-		$html         = (string) $body;
+		$json = json_decode( $body, true, 512, JSON_BIGINT_AS_STRING );
 
-		$json = json_decode( $body, true );
+		if ( ! is_array( $json ) ) {
+			$this->log( 'create_payment', 'Invalid JSON response: ' . $body, 'error' );
+			throw new RuntimeException( __( 'AneePay returned an invalid response.', 'aneepay-crypto-gateway' ) );
+		}
 
-		if ( is_array( $json ) ) {
-			$checkout_url = ! empty( $json['checkout_url'] ) ? esc_url_raw( (string) $json['checkout_url'] ) : $checkout_url;
-			$payment_id   = ! empty( $json['id'] ) ? sanitize_text_field( (string) $json['id'] ) : $payment_id;
-			$operation_id = isset( $json['operation_id'] ) ? sanitize_text_field( (string) $json['operation_id'] ) : $operation_id;
-			$html         = isset( $json['html'] ) ? (string) $json['html'] : '';
+		$payment_id   = isset( $json['id'] ) ? sanitize_text_field( (string) $json['id'] ) : '';
+		$operation_id = isset( $json['operation_id'] ) ? sanitize_text_field( (string) $json['operation_id'] ) : '';
+		$checkout_url = isset( $json['checkout_url'] ) ? esc_url_raw( (string) $json['checkout_url'] ) : '';
+		$status       = isset( $json['status'] ) ? sanitize_key( (string) $json['status'] ) : '';
+
+		if ( empty( $payment_id ) || empty( $operation_id ) || empty( $checkout_url ) ) {
+			$this->log( 'create_payment', 'Missing required fields in response: ' . $body, 'error' );
+			throw new RuntimeException( __( 'AneePay did not return a valid checkout URL.', 'aneepay-crypto-gateway' ) );
 		}
 
 		return array(
-			'html'         => $html,
 			'payment_id'   => $payment_id,
 			'operation_id' => $operation_id,
 			'checkout_url' => $checkout_url,
+			'status'       => $status,
 		);
-	}
-
-	/**
-	 * Read a single response header.
-	 *
-	 * @param array  $headers Response headers.
-	 * @param string $name    Header name (lowercase).
-	 * @return string|null
-	 */
-	protected function extract_header( $headers, $name ) {
-		if ( ! isset( $headers[ $name ] ) ) {
-			return null;
-		}
-
-		$value = $headers[ $name ];
-
-		if ( is_array( $value ) ) {
-			$value = reset( $value );
-		}
-
-		return '' === (string) $value ? null : sanitize_text_field( (string) $value );
-	}
-
-	/**
-	 * Try to extract the payment UUID from response headers.
-	 *
-	 * @param array $headers Response headers.
-	 * @return string|null
-	 */
-	protected function extract_payment_id( $headers ) {
-		$candidates = array( 'x-payment-id', 'location' );
-
-		foreach ( $candidates as $candidate ) {
-			$value = isset( $headers[ $candidate ] ) ? $headers[ $candidate ] : '';
-
-			if ( is_array( $value ) ) {
-				$value = reset( $value );
-			}
-
-			$value = (string) $value;
-
-			if ( preg_match( '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i', $value, $matches ) ) {
-				return $matches[1];
-			}
-		}
-
-		return null;
 	}
 
 	/**
@@ -294,21 +260,41 @@ class AneePay_Crypto_API_Handler {
 	protected function extract_error_message( $code, $body ) {
 		$data = json_decode( (string) $body, true );
 
-		if ( is_array( $data ) && isset( $data['detail'] ) ) {
-			if ( is_string( $data['detail'] ) ) {
-				return $data['detail'];
-			}
+		if ( is_array( $data ) ) {
+			if ( isset( $data['detail'] ) ) {
+				if ( is_string( $data['detail'] ) ) {
+					return $data['detail'];
+				}
 
-			if ( is_array( $data['detail'] ) ) {
-				$messages = array();
-				foreach ( $data['detail'] as $item ) {
-					if ( is_array( $item ) && isset( $item['msg'] ) ) {
-						$messages[] = $item['msg'];
+				if ( is_array( $data['detail'] ) ) {
+					$messages = array();
+					foreach ( $data['detail'] as $item ) {
+						if ( is_array( $item ) && isset( $item['msg'] ) ) {
+							$messages[] = $item['msg'];
+						}
+					}
+					if ( ! empty( $messages ) ) {
+						return implode( '; ', $messages );
 					}
 				}
-				if ( ! empty( $messages ) ) {
-					return implode( '; ', $messages );
+			}
+
+			if ( ! empty( $data['code'] ) ) {
+				$error_code = sanitize_text_field( (string) $data['code'] );
+
+				if ( ! empty( $data['message'] ) ) {
+					return $error_code . ': ' . sanitize_text_field( (string) $data['message'] );
 				}
+
+				if ( ! empty( $data['error'] ) ) {
+					return $error_code . ': ' . sanitize_text_field( (string) $data['error'] );
+				}
+
+				return $error_code;
+			}
+
+			if ( ! empty( $data['message'] ) ) {
+				return sanitize_text_field( (string) $data['message'] );
 			}
 		}
 
@@ -326,7 +312,7 @@ class AneePay_Crypto_API_Handler {
 	 * @return array|null Payment data, or null on failure.
 	 */
 	public function get_payment( $payment_id ) {
-		$url  = $this->api_base_url() . 'payments/' . rawurlencode( $payment_id );
+		$url  = $this->api_url( 'payments/' . rawurlencode( $payment_id ) );
 		$args = $this->request_args();
 
 		$this->log( 'get_payment', 'GET ' . $url );
@@ -345,7 +331,7 @@ class AneePay_Crypto_API_Handler {
 			return null;
 		}
 
-		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+		$data = json_decode( wp_remote_retrieve_body( $response ), true, 512, JSON_BIGINT_AS_STRING );
 
 		if ( ! is_array( $data ) ) {
 			$this->log( 'get_payment', 'Invalid JSON response', 'error' );

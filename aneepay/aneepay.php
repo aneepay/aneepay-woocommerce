@@ -3,7 +3,7 @@
  * Plugin Name: AneePay Crypto Gateway for WooCommerce
  * Plugin URI:  https://aneepay.com/
  * Description: Accept stablecoin crypto payments (USDT, USDC, DAI) on Polygon & Amoy testnet via the non-custodial AneePay gateway. Compatible with HPOS (High-Performance Order Storage).
- * Version:     1.0.0
+ * Version:     1.1.0
  * Author:      AneePay
  * Author URI:  https://aneepay.com/
  * License:     MIT
@@ -21,7 +21,7 @@
 defined( 'ABSPATH' ) || exit;
 
 if ( ! defined( 'ANEEPAY_VERSION' ) ) {
-	define( 'ANEEPAY_VERSION', '1.0.0' );
+	define( 'ANEEPAY_VERSION', '1.1.0' );
 }
 
 if ( ! defined( 'ANEEPAY_PLUGIN_FILE' ) ) {
@@ -181,3 +181,126 @@ function aneepay_register_endpoints() {
 	add_action( 'wp_ajax_nopriv_aneepay_check_status', 'aneepay_ajax_check_status' );
 }
 add_action( 'rest_api_init', 'aneepay_register_endpoints' );
+
+/**
+ * Register the success/fail query variable used by the store-side
+ * confirmation pages.
+ *
+ * @param array $vars Public query variables.
+ * @return array
+ */
+function aneepay_add_query_vars( $vars ) {
+	$vars[] = 'aneepay';
+	return $vars;
+}
+add_filter( 'query_vars', 'aneepay_add_query_vars' );
+
+/**
+ * Render the store-side success/fail confirmation pages.
+ *
+ * AneePay redirects the customer browser to the account-level SUCCESS_URL /
+ * FAIL_URL configured in the AneePay panel. The plugin exposes two static
+ * endpoints for that:
+ *  - /?aneepay=success
+ *  - /?aneepay=fail
+ *
+ * The relevant order is tracked in a cookie set when the customer was sent
+ * to the hosted checkout, so the page can show per-order context.
+ *
+ * @return void
+ */
+function aneepay_render_result_page() {
+	global $wp;
+
+	$result = isset( $wp->query_vars['aneepay'] ) ? sanitize_key( $wp->query_vars['aneepay'] ) : '';
+
+	if ( ! in_array( $result, array( 'success', 'fail' ), true ) ) {
+		return;
+	}
+
+	$order_id = isset( $_COOKIE['aneepay_order'] ) ? absint( wp_unslash( $_COOKIE['aneepay_order'] ) ) : 0; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+	$order    = $order_id ? wc_get_order( $order_id ) : null;
+
+	if ( $order && ANEEPAY_PAYMENT_GATEWAY_ID === $order->get_payment_method() ) {
+		aneepay_sync_order_from_api( $order );
+		$status = $order->get_meta( '_aneepay_payment_status', true );
+	} else {
+		$status = '';
+	}
+
+	aneepay_render_result_html( $result, $order, ( 'success' === $status ) );
+
+	exit;
+}
+add_action( 'template_redirect', 'aneepay_render_result_page' );
+
+/**
+ * Sync an order's payment status from the AneePay API before rendering a
+ * confirmation page (the webhook may still be in flight when the customer
+ * returns to the store).
+ *
+ * @param WC_Order $order Order object.
+ * @return void
+ */
+function aneepay_sync_order_from_api( $order ) {
+	if ( 'success' === $order->get_meta( '_aneepay_payment_status', true ) ) {
+		return;
+	}
+
+	$payment_id = (string) $order->get_meta( '_aneepay_payment_id', true );
+
+	if ( '' === $payment_id ) {
+		return;
+	}
+
+	$gateway = new WC_Gateway_AneePay_Crypto();
+	$data    = $gateway->api_handler->get_payment( $payment_id );
+
+	if ( is_array( $data ) && ! empty( $data['status'] ) ) {
+		aneepay_apply_payment_status( $order, sanitize_key( $data['status'] ) );
+	}
+}
+
+/**
+ * Output the store-side success/fail confirmation page.
+ *
+ * @param string        $result  success|fail.
+ * @param WC_Order|null $order   Order object when known.
+ * @param bool          $is_paid Whether the payment is already confirmed.
+ * @return void
+ */
+function aneepay_render_result_html( $result, $order, $is_paid ) {
+	// A webhook may have confirmed the payment right after AneePay redirected
+	// the customer; always reflect the real state.
+	if ( $is_paid ) {
+		$result = 'success';
+	}
+
+	get_header();
+
+	echo '<div class="aneepay-result">';
+
+	if ( 'success' === $result ) {
+		echo '<h1>' . esc_html__( 'Payment completed', 'aneepay-crypto-gateway' ) . '</h1>';
+		echo '<p>' . esc_html__( 'Thank you! Your payment was successful.', 'aneepay-crypto-gateway' ) . '</p>';
+
+		if ( $order ) {
+			echo '<p><a class="button" href="' . esc_url( $order->get_checkout_order_received_url() ) . '">' . esc_html__( 'View order', 'aneepay-crypto-gateway' ) . '</a></p>';
+		} else {
+			echo '<p><a class="button" href="' . esc_url( wc_get_page_permalink( 'shop' ) ) . '">' . esc_html__( 'Back to shop', 'aneepay-crypto-gateway' ) . '</a></p>';
+		}
+	} else {
+		echo '<h1>' . esc_html__( 'Payment not completed', 'aneepay-crypto-gateway' ) . '</h1>';
+		echo '<p>' . esc_html__( 'The payment was cancelled or could not be completed. Your order has not been charged.', 'aneepay-crypto-gateway' ) . '</p>';
+
+		if ( $order ) {
+			echo '<p><a class="button" href="' . esc_url( $order->get_checkout_payment_url() ) . '">' . esc_html__( 'Try again', 'aneepay-crypto-gateway' ) . '</a></p>';
+		} else {
+			echo '<p><a class="button" href="' . esc_url( wc_get_page_permalink( 'shop' ) ) . '">' . esc_html__( 'Back to shop', 'aneepay-crypto-gateway' ) . '</a></p>';
+		}
+	}
+
+	echo '</div>';
+
+	get_footer();
+}
