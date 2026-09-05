@@ -232,6 +232,17 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 	 * @return void
 	 */
 	public function admin_options() {
+		$secret    = (string) $this->get_option( 'webhook_secret' );
+		$account_id = (string) $this->get_option( 'account_id' );
+
+		if ( '' === $secret ) {
+			echo '<div class="notice notice-error"><p><strong>' . esc_html__( 'AneePay webhook secret is not set.', 'aneepay-crypto-gateway' ) . '</strong> ' . esc_html__( 'Payment confirmations cannot be verified and webhook calls will be rejected (HTTP 401). Copy the Webhook Secret from your AneePay account panel into the field below.', 'aneepay-crypto-gateway' ) . '</p></div>';
+		}
+
+		if ( '' === $account_id ) {
+			echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'AneePay Account ID is not set.', 'aneepay-crypto-gateway' ) . '</strong> ' . esc_html__( 'Payments cannot be created until you enter your account UUID below.', 'aneepay-crypto-gateway' ) . '</p></div>';
+		}
+
 		parent::admin_options();
 
 		$webhook_url = rest_url( 'aneepay/v1/webhook' );
@@ -336,6 +347,28 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 }
 
 /**
+ * Verify the HMAC-SHA256 signature of an incoming webhook.
+ *
+ * The signature (X-AneePay-Signature) is the hex digest of the RAW request
+ * body signed with the webhook_secret. Verification fails closed: a missing
+ * secret, missing signature, or a mismatch all return false.
+ *
+ * @param string $signature Value of the X-AneePay-Signature header.
+ * @param string $body      Raw request body.
+ * @param string $secret    Configured webhook_secret.
+ * @return bool
+ */
+function aneepay_verify_webhook_signature( $signature, $body, $secret ) {
+	if ( '' === (string) $secret || empty( $signature ) ) {
+		return false;
+	}
+
+	$expected = hash_hmac( 'sha256', (string) $body, (string) $secret );
+
+	return hash_equals( $expected, (string) $signature );
+}
+
+/**
  * Handle an incoming status notification.
  *
  * AneePay pushes this payload to the configured STATUS_URL after a payment
@@ -347,9 +380,11 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
  * }
  *
  * The signature (X-AneePay-Signature) is an HMAC-SHA256 hex digest of the
- * raw request body using the webhook_secret. Payloads sent by the legacy
- * dApp confirm endpoint (payment_id / order_id / description / operationId)
- * are still accepted for compatibility.
+ * raw request body using the webhook_secret. Signature verification is
+ * mandatory: without a valid signature the webhook is rejected with 401.
+ * Payloads sent by the legacy dApp confirm endpoint
+ * (payment_id / order_id / description / operationId) are still accepted for
+ * compatibility, but only when signed correctly.
  *
  * @param WP_REST_Request $request REST request.
  * @return WP_REST_Response
@@ -361,10 +396,8 @@ function aneepay_handle_webhook( $request ) {
 	$signature = $request->get_header( 'X-AneePay-Signature' );
 	$body      = (string) $request->get_body();
 
-	if ( '' !== $secret ) {
-		if ( empty( $signature ) || ! hash_equals( hash_hmac( 'sha256', $body, $secret ), $signature ) ) {
-			return new WP_REST_Response( array( 'success' => false ), 401 );
-		}
+	if ( ! aneepay_verify_webhook_signature( $signature, $body, $secret ) ) {
+		return new WP_REST_Response( array( 'success' => false ), 401 );
 	}
 
 	// JSON_BIGINT_AS_STRING keeps operation_id (a 128-bit integer) exact.
