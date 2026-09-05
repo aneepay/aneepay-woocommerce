@@ -45,6 +45,13 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 
 		add_action( 'woocommerce_thankyou_' . $this->id, array( $this, 'render_payment' ), 10, 1 );
 		add_action( 'woocommerce_view_order', array( $this, 'render_payment' ), 10, 1 );
+
+		static $aneepay_description_filter_hooked = false;
+
+		if ( ! $aneepay_description_filter_hooked ) {
+			add_filter( 'woocommerce_gateway_description', array( $this, 'filter_gateway_description' ), 20, 2 );
+			$aneepay_description_filter_hooked = true;
+		}
 	}
 
 	/**
@@ -168,6 +175,28 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 					'amoy'    => 'Amoy (Testnet)',
 				),
 			),
+			'rate_source' => array(
+				'title'       => __( 'Exchange Rate Source', 'aneepay-crypto-gateway' ),
+				'type'        => 'select',
+				'description' => __( 'How the store currency is converted to USD. Auto uses the live Frankfurter (ECB) rate and falls back to the manual rate below.', 'aneepay-crypto-gateway' ),
+				'default'     => 'auto',
+				'desc_tip'    => true,
+				'options'     => array(
+					'auto'   => __( 'Auto (Frankfurter/ECB) + manual fallback', 'aneepay-crypto-gateway' ),
+					'manual' => __( 'Manual rate only', 'aneepay-crypto-gateway' ),
+				),
+			),
+			'exchange_rate' => array(
+				'title'             => __( 'Manual Exchange Rate', 'aneepay-crypto-gateway' ),
+				'type'              => 'number',
+				'description'       => __( 'Used when the auto rate is unavailable. How many units of the store currency make one token (≈1 USD). Example for USD: 1, for EUR: 0.85.', 'aneepay-crypto-gateway' ),
+				'default'           => '',
+				'desc_tip'          => true,
+				'custom_attributes' => array(
+					'step'  => '0.000001',
+					'min'   => '0',
+				),
+			),
 			array(
 				'type' => 'sectionend',
 				'id'   => 'aneepay_section_coin',
@@ -288,7 +317,12 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 			throw new Exception( __( 'Order total must be greater than zero.', 'aneepay-crypto-gateway' ) );
 		}
 
-		$created = $this->api_handler->create_payment( $amount, $order );
+		// Convert the order total (store currency) into the token amount.
+		$converter = new AneePay_USD_Converter( $this );
+		$converted = $converter->convert( $amount, $order->get_currency() );
+
+		$token_amount = (string) number_format( $converted['token_amount'], 2, '.', '' );
+		$created      = $this->api_handler->create_payment( $token_amount, $order );
 
 		$order->add_meta_data( '_aneepay_payment_id', $created['payment_id'], true );
 		$order->add_meta_data( '_aneepay_operation_id', $created['operation_id'], true );
@@ -297,6 +331,14 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 		$order->add_meta_data( '_aneepay_sandbox', $this->api_handler->is_sandbox() ? 'yes' : 'no', true );
 		$order->add_meta_data( '_aneepay_payment_status', 'pending', true );
 		$order->add_meta_data( '_aneepay_checkout_url', $created['checkout_url'], true );
+
+		// Store the conversion context for display and reconciliation.
+		$order->add_meta_data( '_aneepay_token_amount', $token_amount, true );
+		$order->add_meta_data( '_aneepay_order_currency', $converted['currency'], true );
+		$order->add_meta_data( '_aneepay_order_total', (string) $amount, true );
+		$order->add_meta_data( '_aneepay_usd_amount', (string) number_format( $converted['usd_amount'], 2, '.', '' ), true );
+		$order->add_meta_data( '_aneepay_fiat_per_usd', (string) $converted['fiat_per_usd'], true );
+		$order->add_meta_data( '_aneepay_rate_source', $converted['source'], true );
 
 		$order->save();
 
@@ -343,6 +385,83 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 		echo '<div class="aneepay-payment" data-order-id="' . esc_attr( $order_id ) . '" data-payment-status="' . esc_attr( (string) $status ) . '">';
 		esc_html_e( 'Waiting for the payment to be confirmed on the blockchain. This page updates automatically.', 'aneepay-crypto-gateway' );
 		echo '</div>';
+	}
+
+	/**
+	 * Append the checkout conversion breakdown to the method description.
+	 *
+	 * @param string $description Gateway description.
+	 * @param string $gateway_id   Payment gateway id.
+	 * @return string
+	 */
+	public function filter_gateway_description( $description, $gateway_id ) {
+		if ( $this->id !== $gateway_id ) {
+			return $description;
+		}
+
+		$breakdown = $this->get_checkout_breakdown_html();
+
+		return '' === $breakdown ? $description : $description . $breakdown;
+	}
+
+	/**
+	 * Build a transparent shop-currency -> token conversion breakdown for the
+	 * payment method card on the checkout page.
+	 *
+	 * Returns an empty string when there is nothing to show (no cart, zero
+	 * total, or the rate cannot be resolved).
+	 *
+	 * @return string
+	 */
+	public function get_checkout_breakdown_html() {
+		if ( ! function_exists( 'WC' ) || null === WC()->cart ) {
+			return '';
+		}
+
+		$total = (float) WC()->cart->get_total( 'raw' );
+
+		if ( $total <= 0 ) {
+			return '';
+		}
+
+		$currency = (string) get_woocommerce_currency();
+
+		try {
+			$converted = ( new AneePay_USD_Converter( $this ) )->convert( $total, $currency );
+		} catch ( Exception $e ) {
+			return '';
+		}
+
+		$token        = strtoupper( $this->api_handler->get_token() );
+		$fiat_per_usd = (float) $converted['fiat_per_usd'];
+		$usd_per_fiat = $fiat_per_usd > 0 ? 1 / $fiat_per_usd : 0;
+		$usd_amount   = (float) $converted['usd_amount'];
+		$token_amount = (float) $converted['token_amount'];
+
+		$store_amount = wc_price( $total, array( 'currency' => $currency ) );
+		$usd_label    = wc_price( $usd_amount, array( 'currency' => 'USD' ) );
+
+		if ( 'manual' === $converted['source'] ) {
+			$rate_source = __( 'Rate from shop settings', 'aneepay-crypto-gateway' );
+		} else {
+			$rate_source = __( 'Rate: ECB / Frankfurter', 'aneepay-crypto-gateway' );
+		}
+
+		ob_start();
+		?>
+		<div class="aneepay-checkout-breakdown">
+			<p class="aneepay-breakdown-title"><?php printf( esc_html__( 'You will pay %s %s', 'aneepay-crypto-gateway' ), esc_html( $token_amount ), esc_html( $token ) ); ?></p>
+			<ul>
+				<li><?php printf( esc_html__( 'Order: %s (%s)', 'aneepay-crypto-gateway' ), wp_kses_post( $store_amount ), esc_html( $currency ) ); ?></li>
+				<li><?php printf( esc_html__( 'USD equivalent: %s', 'aneepay-crypto-gateway' ), wp_kses_post( $usd_label ) ); ?></li>
+				<?php if ( $usd_per_fiat > 0 && 'USD' !== $currency ) : ?>
+					<li><?php printf( esc_html__( '1 %1$s = %2$s USD', 'aneepay-crypto-gateway' ), esc_html( $currency ), esc_html( number_format( $usd_per_fiat, 4, '.', '' ) ) ); ?></li>
+				<?php endif; ?>
+				<li class="aneepay-breakdown-source"><?php echo esc_html( $rate_source ); ?></li>
+			</ul>
+		</div>
+		<?php
+		return ob_get_clean();
 	}
 }
 

@@ -45,6 +45,7 @@ if ( ! defined( 'ANEEPAY_PAYMENT_GATEWAY_ID' ) ) {
 }
 
 require_once ANEEPAY_PLUGIN_DIR . 'includes/class-crypto-api-handler.php';
+require_once ANEEPAY_PLUGIN_DIR . 'includes/class-usd-converter.php';
 require_once ANEEPAY_PLUGIN_DIR . 'includes/class-wc-gateway-crypto.php';
 
 /**
@@ -158,6 +159,17 @@ function aneepay_enqueue_frontend_scripts() {
 			'nonce'   => wp_create_nonce( 'aneepay_status' ),
 		)
 	);
+
+	wp_register_style( 'aneepay-checkout', false, array(), ANEEPAY_VERSION );
+	wp_add_inline_style(
+		'aneepay-checkout',
+		'.aneepay-checkout-breakdown{margin:6px 0 0;padding:8px 10px;background:#f6f7f7;border:1px solid #e0e0e0;border-radius:4px;font-size:13px;line-height:1.5;}' .
+		'.aneepay-checkout-breakdown .aneepay-breakdown-title{font-weight:600;margin:0 0 4px;}' .
+		'.aneepay-checkout-breakdown ul{margin:0;padding-left:18px;color:#50575e;}' .
+		'.aneepay-checkout-breakdown li{margin-bottom:2px;}' .
+		'.aneepay-checkout-breakdown .aneepay-breakdown-source{font-size:12px;color:#8c8f94;font-style:italic;}'
+	);
+	wp_enqueue_style( 'aneepay-checkout' );
 }
 add_action( 'wp_enqueue_scripts', 'aneepay_enqueue_frontend_scripts' );
 
