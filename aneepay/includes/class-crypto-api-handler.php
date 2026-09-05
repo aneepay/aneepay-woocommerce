@@ -112,10 +112,18 @@ class AneePay_Crypto_API_Handler {
 	/**
 	 * Network name expected by the API (polygon|amoy).
 	 *
+	 * Test/sandbox mode always forces the Amoy testnet.
+	 *
 	 * @return string
 	 */
 	public function get_network() {
-		return $this->is_sandbox() ? 'amoy' : 'polygon';
+		if ( $this->is_sandbox() ) {
+			return 'amoy';
+		}
+
+		$network = strtolower( (string) $this->gateway->get_option( 'network', 'polygon' ) );
+
+		return in_array( $network, array( 'polygon', 'amoy' ), true ) ? $network : 'polygon';
 	}
 
 	/**

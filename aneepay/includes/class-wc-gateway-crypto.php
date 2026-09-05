@@ -54,6 +54,16 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 	 */
 	public function init_form_fields() {
 		$this->form_fields = array(
+
+			// ------------------------------------------------------------------
+			// Section: Basic
+			// ------------------------------------------------------------------
+			array(
+				'title' => __( 'Basic', 'aneepay-crypto-gateway' ),
+				'type'  => 'title',
+				'desc'  => __( 'Enable the gateway and set how it appears to customers.', 'aneepay-crypto-gateway' ),
+				'id'    => 'aneepay_section_basic',
+			),
 			'enabled'     => array(
 				'title'       => __( 'Enable/Disable', 'aneepay-crypto-gateway' ),
 				'type'        => 'checkbox',
@@ -74,12 +84,36 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 				'default'     => __( 'Pay instantly with a stablecoin on the Polygon network.', 'aneepay-crypto-gateway' ),
 				'desc_tip'    => true,
 			),
-			'test_mode'   => array(
-				'title'       => __( 'Test/Sandbox Mode', 'aneepay-crypto-gateway' ),
-				'type'        => 'checkbox',
-				'label'       => __( 'Enable sandbox mode (Amoy testnet)', 'aneepay-crypto-gateway' ),
-				'description' => __( 'When enabled, payments are created on the Polygon Amoy testnet with USDC and the is_safe check is bypassed.', 'aneepay-crypto-gateway' ),
-				'default'     => 'no',
+			array(
+				'type' => 'sectionend',
+				'id'   => 'aneepay_section_basic',
+			),
+
+			// ------------------------------------------------------------------
+			// Section: Connection
+			// ------------------------------------------------------------------
+			array(
+				'title' => __( 'AneePay Connection', 'aneepay-crypto-gateway' ),
+				'type'  => 'title',
+				'desc'  => __( 'Your AneePay account credentials and the webhook signature used to verify incoming payment notifications.', 'aneepay-crypto-gateway' ),
+				'id'    => 'aneepay_section_connection',
+			),
+			'account_id'  => array(
+				'title'             => __( 'Account ID', 'aneepay-crypto-gateway' ),
+				'type'              => 'text',
+				'description'       => __( 'Your AneePay account UUID. Required — sent in the X-Account-Id header for every API request.', 'aneepay-crypto-gateway' ),
+				'default'           => '',
+				'desc_tip'          => true,
+				'custom_attributes' => array(
+					'pattern' => '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
+					'class'   => 'regular-text',
+				),
+			),
+			'webhook_secret' => array(
+				'title'       => __( 'Webhook Secret', 'aneepay-crypto-gateway' ),
+				'type'        => 'password',
+				'description' => __( 'Your AneePay webhook secret. Used to verify the X-AneePay-Signature (HMAC-SHA256) on webhook calls. Required to confirm payments.', 'aneepay-crypto-gateway' ),
+				'default'     => '',
 				'desc_tip'    => true,
 			),
 			'site_domain' => array(
@@ -89,15 +123,30 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 				'default'     => '',
 				'desc_tip'    => true,
 			),
-			'account_id'  => array(
-				'title'       => __( 'Account ID', 'aneepay-crypto-gateway' ),
-				'type'        => 'text',
-				'description' => __( 'Your AneePay account UUID. Required — sent in the X-Account-Id header for every API request.', 'aneepay-crypto-gateway' ),
-				'default'     => '',
+			'test_mode'   => array(
+				'title'       => __( 'Test/Sandbox Mode', 'aneepay-crypto-gateway' ),
+				'type'        => 'checkbox',
+				'label'       => __( 'Enable sandbox mode (Amoy testnet)', 'aneepay-crypto-gateway' ),
+				'description' => __( 'When enabled, payments are created on the Polygon Amoy testnet with USDC and the is_safe check is bypassed.', 'aneepay-crypto-gateway' ),
+				'default'     => 'no',
 				'desc_tip'    => true,
 			),
+			array(
+				'type' => 'sectionend',
+				'id'   => 'aneepay_section_connection',
+			),
+
+			// ------------------------------------------------------------------
+			// Section: Coin & Blockchain
+			// ------------------------------------------------------------------
+			array(
+				'title' => __( 'Coin & Blockchain', 'aneepay-crypto-gateway' ),
+				'type'  => 'title',
+				'desc'  => __( 'Select the stablecoin your customers pay in and the blockchain (network) used to settle the funds.', 'aneepay-crypto-gateway' ),
+				'id'    => 'aneepay_section_coin',
+			),
 			'token'       => array(
-				'title'       => __( 'Supported Cryptocurrency', 'aneepay-crypto-gateway' ),
+				'title'       => __( 'Cryptocurrency', 'aneepay-crypto-gateway' ),
 				'type'        => 'select',
 				'description' => __( 'The stablecoin used to charge customers. Funds go directly to your wallet.', 'aneepay-crypto-gateway' ),
 				'default'     => 'usdt',
@@ -108,12 +157,30 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 					'dai'  => 'DAI',
 				),
 			),
-			'webhook_secret' => array(
-				'title'       => __( 'Webhook Secret', 'aneepay-crypto-gateway' ),
-				'type'        => 'password',
-				'description' => __( 'Your AneePay webhook secret used to verify the X-AneePay-Signature (HMAC-SHA256) on incoming webhook calls. Strongly recommended.', 'aneepay-crypto-gateway' ),
-				'default'     => '',
+			'network'     => array(
+				'title'       => __( 'Blockchain', 'aneepay-crypto-gateway' ),
+				'type'        => 'select',
+				'description' => __( 'Polygon (Mainnet) for live payments. Amoy (Testnet) is used automatically in Test Mode.', 'aneepay-crypto-gateway' ),
+				'default'     => 'polygon',
 				'desc_tip'    => true,
+				'options'     => array(
+					'polygon' => 'Polygon (Mainnet)',
+					'amoy'    => 'Amoy (Testnet)',
+				),
+			),
+			array(
+				'type' => 'sectionend',
+				'id'   => 'aneepay_section_coin',
+			),
+
+			// ------------------------------------------------------------------
+			// Section: Advanced
+			// ------------------------------------------------------------------
+			array(
+				'title' => __( 'Advanced', 'aneepay-crypto-gateway' ),
+				'type'  => 'title',
+				'desc'  => __( 'Troubleshooting options.', 'aneepay-crypto-gateway' ),
+				'id'    => 'aneepay_section_advanced',
 			),
 			'debug'       => array(
 				'title'       => __( 'Debug Log', 'aneepay-crypto-gateway' ),
@@ -123,7 +190,40 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 				'default'     => 'no',
 				'desc_tip'    => true,
 			),
+			array(
+				'type' => 'sectionend',
+				'id'   => 'aneepay_section_advanced',
+			),
 		);
+	}
+
+	/**
+	 * Validate settings before they are saved.
+	 *
+	 * Refuses to save a malformed Account ID (must be a UUID).
+	 *
+	 * @return bool
+	 */
+	public function process_admin_options() {
+		$field_key = $this->get_field_key( 'account_id' );
+		$account_id = isset( $_POST[ $field_key ] ) ? wc_clean( wp_unslash( $_POST[ $field_key ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+		if ( '' !== $account_id && ! $this->is_valid_uuid( $account_id ) ) {
+			WC_Admin_Settings::add_error( __( 'AneePay Account ID must be a valid UUID.', 'aneepay-crypto-gateway' ) );
+			return false;
+		}
+
+		return parent::process_admin_options();
+	}
+
+	/**
+	 * Whether a string is a valid versionless UUID.
+	 *
+	 * @param string $id Value to check.
+	 * @return bool
+	 */
+	protected function is_valid_uuid( $id ) {
+		return (bool) preg_match( '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', trim( (string) $id ) );
 	}
 
 	/**
