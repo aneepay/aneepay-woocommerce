@@ -62,3 +62,6 @@ way as they are implemented (see `docs/ROADMAP-*.md`).
 > When working from [`docs/INTEGRATION.md`](docs/INTEGRATION.md), see §8 (the recipe for
 > creating plugins for any CMS) — it is the common foundation for all three
 > platforms.
+
+> See [`TECHDEBT.md`](TECHDEBT.md) for the planned extraction of a shared
+> platform-agnostic core (currently the pure logic is duplicated per plugin).
