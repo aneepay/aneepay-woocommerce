@@ -337,7 +337,10 @@ function aneepay_enqueue_admin_styles( $hook_suffix ) {
 		'.aneepay-request-log{margin:8px 0 16px;padding:12px 16px;background:#f9f9f9;border:1px solid #ddd;border-radius:6px;}' .
 		'.aneepay-request-log .aneepay-log-panel{margin-top:10px;overflow:auto;max-height:360px;}' .
 		'.aneepay-log-panel table{font-size:12px;}' .
-		'.aneepay-log-panel td{word-break:break-all;}'
+		'.aneepay-log-panel td{word-break:break-all;}' .
+		'.aneepay-info-block{margin:8px 0 16px;padding:12px 16px;background:#f9f9f9;border:1px solid #ddd;border-radius:6px;}' .
+		'.aneepay-info-block h3{margin:0 0 8px;}' .
+		'.aneepay-info-block ul{margin:0;padding-left:18px;}'
 	);
 	wp_enqueue_style( 'aneepay-admin' );
 }

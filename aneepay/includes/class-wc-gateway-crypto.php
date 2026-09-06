@@ -242,16 +242,49 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 	/**
 	 * Validate settings before they are saved.
 	 *
-	 * Refuses to save a malformed Account ID (must be a UUID).
+	 * Enforces the required connection fields (Account ID + Webhook Secret) and
+	 * validates the manual exchange rate. Returns false (and shows errors)
+	 * without saving when validation fails.
 	 *
 	 * @return bool
 	 */
 	public function process_admin_options() {
-		$field_key = $this->get_field_key( 'account_id' );
-		$account_id = isset( $_POST[ $field_key ] ) ? wc_clean( wp_unslash( $_POST[ $field_key ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$failures = array();
 
-		if ( '' !== $account_id && ! $this->is_valid_uuid( $account_id ) ) {
-			WC_Admin_Settings::add_error( __( 'AneePay Account ID must be a valid UUID.', 'aneepay-crypto-gateway' ) );
+		// Account ID: required + UUID.
+		$account_id = (string) $this->posted_value( 'account_id' );
+
+		if ( '' === $account_id ) {
+			$failures[] = __( 'AneePay Account ID is required.', 'aneepay-crypto-gateway' );
+		} elseif ( ! $this->is_valid_uuid( $account_id ) ) {
+			$failures[] = __( 'AneePay Account ID must be a valid UUID.', 'aneepay-crypto-gateway' );
+		}
+
+		// Webhook Secret: required. A blank field on re-save keeps the
+		// previously stored secret, so the effective value is used.
+		$posted_secret   = (string) $this->posted_value( 'webhook_secret' );
+		$effective_secret = '' !== $posted_secret ? $posted_secret : (string) $this->get_option( 'webhook_secret' );
+
+		if ( '' === $effective_secret ) {
+			$failures[] = __( 'AneePay Webhook Secret is required to verify payment confirmations.', 'aneepay-crypto-gateway' );
+		}
+
+		// Manual exchange rate: when provided, must be a positive number.
+		$rate_value = (string) $this->posted_value( 'exchange_rate' );
+
+		if ( '' !== $rate_value ) {
+			$rate = (float) $rate_value;
+
+			if ( ! is_finite( $rate ) || $rate <= 0 ) {
+				$failures[] = __( 'Manual Exchange Rate must be a positive number.', 'aneepay-crypto-gateway' );
+			}
+		}
+
+		if ( ! empty( $failures ) ) {
+			foreach ( $failures as $failure ) {
+				WC_Admin_Settings::add_error( $failure );
+			}
+
 			return false;
 		}
 
@@ -262,6 +295,18 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Read a raw posted setting value by its field key.
+	 *
+	 * @param string $key Setting key.
+	 * @return string
+	 */
+	protected function posted_value( $key ) {
+		$field_key = $this->get_field_key( $key );
+
+		return isset( $_POST[ $field_key ] ) ? wc_clean( wp_unslash( $_POST[ $field_key ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 	}
 
 	/**
@@ -302,6 +347,10 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 			echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'AneePay Account ID is not set.', 'aneepay-crypto-gateway' ) . '</strong> ' . esc_html__( 'Payments cannot be created until you enter your account UUID below.', 'aneepay-crypto-gateway' ) . '</p></div>';
 		}
 
+		if ( 'yes' === $this->get_option( 'test_mode' ) ) {
+			echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'Sandbox mode is enabled.', 'aneepay-crypto-gateway' ) . '</strong> ' . esc_html__( 'Payments are created on the Amoy testnet with USDC and are not real. Disable Test Mode for live payments.', 'aneepay-crypto-gateway' ) . '</p></div>';
+		}
+
 		$this->render_test_connection( $account_id );
 
 		$this->render_conversion_example();
@@ -311,6 +360,8 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 		parent::admin_options();
 
 		$this->render_endpoints( $webhook_url, $success_url, $fail_url );
+
+		$this->render_info_blocks();
 	}
 
 	/**
@@ -620,6 +671,28 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 		echo ' <button type="button" class="button button-small aneepay-copy">' . esc_html__( 'Copy', 'aneepay-crypto-gateway' ) . '</button>';
 		echo '<br><span class="description">' . esc_html( $desc ) . '</span>';
 		echo '</p>';
+	}
+
+	/**
+	 * Print the "How it works" and webhook-fields note blocks.
+	 *
+	 * @return void
+	 */
+	protected function render_info_blocks() {
+		echo '<div class="aneepay-info-block">';
+		echo '<h3>' . esc_html__( 'How it works', 'aneepay-crypto-gateway' ) . '</h3>';
+		echo '<ul>';
+		echo '<li>' . esc_html__( 'Non-custodial: funds go directly from the customer to the smart contract and then to your wallet.', 'aneepay-crypto-gateway' ) . '</li>';
+		echo '<li>' . esc_html__( 'A fixed 0.5% fee is deducted automatically by the contract from each payment.', 'aneepay-crypto-gateway' ) . '</li>';
+		echo '<li>' . esc_html__( 'No KYC is required to start accepting payments.', 'aneepay-crypto-gateway' ) . '</li>';
+		echo '<li>' . esc_html__( 'Your customers pay in USDT, USDC or DAI on Polygon (live) or Amoy (testnet).', 'aneepay-crypto-gateway' ) . '</li>';
+		echo '</ul>';
+		echo '</div>';
+
+		echo '<div class="aneepay-info-block">';
+		echo '<h3>' . esc_html__( 'Webhook note', 'aneepay-crypto-gateway' ) . '</h3>';
+		echo '<p>' . esc_html__( 'The webhook currently only contains operation_id, status and timestamp. Fields such as fee, net_amount and tx_hash are not part of the payload yet — use API polling to fetch detailed payment data.', 'aneepay-crypto-gateway' ) . '</p>';
+		echo '</div>';
 	}
 
 	/**
