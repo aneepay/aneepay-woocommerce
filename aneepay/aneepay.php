@@ -46,7 +46,6 @@ if ( ! defined( 'ANEEPAY_PAYMENT_GATEWAY_ID' ) ) {
 
 require_once ANEEPAY_PLUGIN_DIR . 'includes/class-crypto-api-handler.php';
 require_once ANEEPAY_PLUGIN_DIR . 'includes/class-usd-converter.php';
-require_once ANEEPAY_PLUGIN_DIR . 'includes/class-wc-gateway-crypto.php';
 
 /**
  * Declare compatibility with High-Performance Order Storage (HPOS).
@@ -70,7 +69,26 @@ function aneepay_add_gateway( $methods ) {
 	$methods[] = 'WC_Gateway_AneePay_Crypto';
 	return $methods;
 }
-add_filter( 'woocommerce_payment_gateways', 'aneepay_add_gateway' );
+
+/**
+ * Load the gateway class only once WooCommerce is ready.
+ *
+ * The gateway extends `WC_Payment_Gateway`, which WooCommerce defines during
+ * its own `plugins_loaded` bootstrap. Loading the class file earlier (e.g. at
+ * plugin include time) would crash with "Class 'WC_Payment_Gateway' not found".
+ *
+ * @return void
+ */
+function aneepay_load_gateway_class() {
+	if ( ! class_exists( 'WooCommerce' ) || ! class_exists( 'WC_Payment_Gateway' ) ) {
+		return;
+	}
+
+	require_once ANEEPAY_PLUGIN_DIR . 'includes/class-wc-gateway-crypto.php';
+
+	add_filter( 'woocommerce_payment_gateways', 'aneepay_add_gateway' );
+}
+add_action( 'plugins_loaded', 'aneepay_load_gateway_class', 20 );
 
 /**
  * Show an admin notice if WooCommerce is not active.
@@ -126,8 +144,15 @@ register_deactivation_hook( __FILE__, 'aneepay_deactivate_plugin' );
 function aneepay_schedule_sync() {
 	wp_clear_scheduled_hook( 'aneepay_sync_pending_orders' );
 
-	$gateway  = new WC_Gateway_AneePay_Crypto();
-	$interval = (string) $gateway->get_option( 'sync_interval', 'every_five_minutes' );
+	// Read the option directly — the gateway class may not be loaded yet
+	// during activation (plugins_loaded has already fired at that point).
+	$settings  = get_option( 'woocommerce_' . ANEEPAY_PAYMENT_GATEWAY_ID . '_settings', array() );
+	$intervals = array( 'every_five_minutes', 'every_ten_minutes', 'every_fifteen_minutes', 'every_thirty_minutes' );
+	$interval  = isset( $settings['sync_interval'] ) ? (string) $settings['sync_interval'] : 'every_five_minutes';
+
+	if ( ! in_array( $interval, $intervals, true ) ) {
+		$interval = 'every_five_minutes';
+	}
 
 	wp_schedule_event( time() + 60, $interval, 'aneepay_sync_pending_orders' );
 }
