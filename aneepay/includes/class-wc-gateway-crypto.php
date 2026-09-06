@@ -304,6 +304,10 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 
 		$this->render_test_connection( $account_id );
 
+		$this->render_conversion_example();
+
+		$this->render_request_log();
+
 		parent::admin_options();
 
 		$this->render_endpoints( $webhook_url, $success_url, $fail_url );
@@ -404,6 +408,164 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 						out.style.color = 'red';
 					});
 			});
+		})();
+		</script>
+		<?php
+	}
+
+	/**
+	 * Print a live conversion example based on the current settings.
+	 *
+	 * @return void
+	 */
+	protected function render_conversion_example() {
+		$sample   = 150.0;
+		$currency = (string) get_woocommerce_currency();
+		$token    = strtoupper( $this->api_handler->get_token() );
+
+		$converter = new AneePay_USD_Converter( $this );
+		$source    = '';
+		$rate      = $converter->peek_fiat_per_usd( $currency, $source );
+
+		echo '<div class="aneepay-conversion-example">';
+		echo '<strong>' . esc_html__( 'Example conversion', 'aneepay-crypto-gateway' ) . '</strong>';
+
+		if ( null === $rate || $rate <= 0 ) {
+			echo '<p class="description">' . esc_html__( 'No rate is available yet. The auto rate is resolved at checkout, or set a manual exchange rate to see a preview.', 'aneepay-crypto-gateway' ) . '</p>';
+		} else {
+			$usd_amount  = $sample / $rate;
+			$token_amount = ceil( $usd_amount * 100 ) / 100;
+			$usd_per_fiat = 1 / $rate;
+
+			echo '<ul>';
+			echo '<li>' . sprintf(
+				/* translators: %1$s: sample amount, %2$s: currency */
+				esc_html__( 'Order: %s', 'aneepay-crypto-gateway' ),
+				wp_kses_post( wc_price( $sample, array( 'currency' => $currency ) ) )
+			) . '</li>';
+
+			if ( 'USD' !== $currency ) {
+				echo '<li>' . sprintf(
+					/* translators: %1$s: currency, %2$s: rate */
+					esc_html__( '1 %1$s = %2$s USD', 'aneepay-crypto-gateway' ),
+					esc_html( $currency ),
+					esc_html( number_format( $usd_per_fiat, 4, '.', '' ) )
+				) . '</li>';
+			}
+
+			echo '<li>' . sprintf(
+				/* translators: %1$s: USD amount, %2$s: token, %3$s: token amount */
+				esc_html__( 'You pay: %1$s → %3$s %2$s', 'aneepay-crypto-gateway' ),
+				wp_kses_post( wc_price( $usd_amount, array( 'currency' => 'USD' ) ) ),
+				esc_html( $token ),
+				esc_html( number_format( $token_amount, 2, '.', '' ) )
+			) . '</li>';
+
+			echo '<li class="description">' . ( 'manual' === $source ? esc_html__( 'Rate from shop settings.', 'aneepay-crypto-gateway' ) : esc_html__( 'Rate: ECB / Frankfurter (cached).', 'aneepay-crypto-gateway' ) ) . '</li>';
+			echo '</ul>';
+		}
+
+		echo '</div>';
+	}
+
+	/**
+	 * Print the collapsible "Request log" panel with a load + clear action.
+	 *
+	 * @return void
+	 */
+	protected function render_request_log() {
+		$nonce = wp_create_nonce( 'aneepay_logs' );
+
+		echo '<div class="aneepay-request-log">';
+		echo '<div class="aneepay-request-log-toolbar">';
+		echo '<button type="button" id="aneepay-toggle-log" class="button" data-nonce="' . esc_attr( $nonce ) . '" data-ajax="' . esc_url( admin_url( 'admin-ajax.php' ) ) . '">' . esc_html__( 'Request log', 'aneepay-crypto-gateway' ) . '</button>';
+		echo ' <button type="button" id="aneepay-clear-log" class="button" style="display:none;">' . esc_html__( 'Clear', 'aneepay-crypto-gateway' ) . '</button>';
+		echo ' <span id="aneepay-log-count" class="description"></span>';
+		echo '</div>';
+		echo '<div id="aneepay-log-panel" class="aneepay-log-panel" style="display:none;"></div>';
+		echo '</div>';
+		?>
+		<script type="text/javascript">
+		(function () {
+			'use strict';
+			var toggle = document.getElementById('aneepay-toggle-log');
+			var panel = document.getElementById('aneepay-log-panel');
+			var clear = document.getElementById('aneepay-clear-log');
+			var countEl = document.getElementById('aneepay-log-count');
+			if (!toggle || !panel) { return; }
+			var ajaxUrl = toggle.getAttribute('data-ajax');
+			var nonce = toggle.getAttribute('data-nonce');
+			var loaded = false;
+
+			function esc(s) {
+				return String(s == null ? '' : s);
+			}
+
+			function render(logs) {
+				if (countEl) {
+					countEl.textContent = logs.length ? ('— ' + logs.length + ' requests') : '';
+				}
+				if (!logs.length) {
+					panel.innerHTML = '<p class="description">No requests logged yet.</p>';
+					if (clear) { clear.style.display = 'none'; }
+					return;
+				}
+				var table = document.createElement('table');
+				table.className = 'widefat striped';
+				var thead = document.createElement('thead');
+				var hr = document.createElement('tr');
+				['Time', 'Method', 'Endpoint', 'Code', 'Latency', 'Body'].forEach(function (h) {
+					var th = document.createElement('th'); th.textContent = h; hr.appendChild(th);
+				});
+				thead.appendChild(hr); table.appendChild(thead);
+				var tbody = document.createElement('tbody');
+				logs.forEach(function (l) {
+					var tr = document.createElement('tr');
+					[[ String(new Date(l.time * 1000).toLocaleString()), l.method, l.endpoint, String(l.code), (l.latency + ' ms'), l.body ].forEach(function (v) {
+						var td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+					})];
+					tbody.appendChild(tr);
+				});
+				table.appendChild(tbody);
+				panel.innerHTML = '';
+				panel.appendChild(table);
+				if (clear) { clear.style.display = 'inline-block'; }
+			}
+
+			function load() {
+				var body = new URLSearchParams();
+				body.append('action', 'aneepay_get_logs');
+				body.append('nonce', nonce);
+				fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body })
+					.then(function (r) { return r.json(); })
+					.then(function (d) {
+						if (d && d.success) { render((d.data && d.data.logs) || []); }
+						else { panel.innerHTML = '<p class="description">Failed to load log.</p>'; }
+					})
+					.catch(function () { panel.innerHTML = '<p class="description">Failed to load log.</p>'; });
+			}
+
+			toggle.addEventListener('click', function () {
+				var visible = panel.style.display !== 'none';
+				if (visible) {
+					panel.style.display = 'none';
+				} else {
+					panel.style.display = 'block';
+					if (!loaded) { loaded = true; load(); }
+				}
+			});
+
+			if (clear) {
+				clear.addEventListener('click', function () {
+					if (!window.confirm('Clear the request log?')) { return; }
+					var body = new URLSearchParams();
+					body.append('action', 'aneepay_clear_logs');
+					body.append('nonce', nonce);
+					fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body })
+						.then(function (r) { return r.json(); })
+						.then(function () { load(); });
+				});
+			}
 		})();
 		</script>
 		<?php

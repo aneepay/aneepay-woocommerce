@@ -200,7 +200,7 @@ class AneePay_Crypto_API_Handler {
 
 		$this->log( 'create_payment', 'POST ' . $url . ' body=' . wp_json_encode( $payload ) );
 
-		$response = wp_remote_post( $url, $args );
+		$response = $this->remote_request( 'POST', $url, $args );
 
 		return $this->parse_create_response( $response );
 	}
@@ -325,7 +325,7 @@ class AneePay_Crypto_API_Handler {
 
 		$this->log( 'get_payment', 'GET ' . $url );
 
-		$response = wp_remote_get( $url, $args );
+		$response = $this->remote_request( 'GET', $url, $args );
 
 		if ( is_wp_error( $response ) ) {
 			$this->log( 'get_payment', $response->get_error_message(), 'error' );
@@ -374,7 +374,7 @@ class AneePay_Crypto_API_Handler {
 
 		$this->log( 'test_connection', 'GET ' . $url );
 
-		$response = wp_remote_get( $url, $args );
+		$response = $this->remote_request( 'GET', $url, $args );
 
 		if ( is_wp_error( $response ) ) {
 			$this->log( 'test_connection', $response->get_error_message(), 'error' );
@@ -408,5 +408,115 @@ class AneePay_Crypto_API_Handler {
 			'error_code' => $error_code,
 			'message'    => $this->extract_error_message( $code, $body ),
 		);
+	}
+
+	/**
+	 * Perform an AneePay API request, measure its latency and record it in
+	 * the in-app request log (used by the settings panel).
+	 *
+	 * @param string $method GET|POST.
+	 * @param string $url    Full request URL.
+	 * @param array  $args    wp_remote_* args.
+	 * @return array|WP_Error The response.
+	 */
+	protected function remote_request( $method, $url, $args ) {
+		$start = microtime( true );
+
+		$response = ( 'POST' === strtoupper( $method ) )
+			? wp_remote_post( $url, $args )
+			: wp_remote_get( $url, $args );
+
+		$latency_ms = (int) round( ( microtime( true ) - $start ) * 1000 );
+
+		$code = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
+		$body = is_wp_error( $response ) ? '' : wp_remote_retrieve_body( $response );
+
+		$this->record_request( $method, $url, $code, $body, $latency_ms );
+
+		return $response;
+	}
+
+	/**
+	 * Append a request record to the ring buffer (last 50 requests).
+	 *
+	 * No secrets are stored: headers (e.g. X-Account-Id) and the webhook secret
+	 * are never part of the body/record. Bodies are truncated for storage.
+	 *
+	 * @param string $method    HTTP method.
+	 * @param string $url       Request URL.
+	 * @param int    $code      Response code (0 for transport errors).
+	 * @param string $body      Response body.
+	 * @param int    $latency_ms Latency in ms.
+	 * @return void
+	 */
+	protected function record_request( $method, $url, $code, $body, $latency_ms ) {
+		$log = get_option( 'aneepay_request_log', array() );
+
+		if ( ! is_array( $log ) ) {
+			$log = array();
+		}
+
+		$log[] = array(
+			'time'    => time(),
+			'method'  => strtoupper( $method ),
+			'endpoint'=> $this->shorten_url( $url ),
+			'code'    => (int) $code,
+			'latency' => (int) $latency_ms,
+			'body'    => $this->truncate( (string) $body, 500 ),
+		);
+
+		if ( count( $log ) > 50 ) {
+			$log = array_slice( $log, -50 );
+		}
+
+		update_option( 'aneepay_request_log', $log, false );
+	}
+
+	/**
+	 * Get the in-app request log (newest first).
+	 *
+	 * @return array
+	 */
+	public function get_request_log() {
+		$log = get_option( 'aneepay_request_log', array() );
+
+		return is_array( $log ) ? array_reverse( $log ) : array();
+	}
+
+	/**
+	 * Clear the in-app request log.
+	 *
+	 * @return void
+	 */
+	public function clear_request_log() {
+		delete_option( 'aneepay_request_log' );
+	}
+
+	/**
+	 * Reduce a URL to its path + query for compact display.
+	 *
+	 * @param string $url Full URL.
+	 * @return string
+	 */
+	protected function shorten_url( $url ) {
+		$path = (string) wp_parse_url( $url, PHP_URL_PATH );
+		$query = (string) wp_parse_url( $url, PHP_URL_QUERY );
+
+		return $path . ( '' !== $query ? '?' . $query : '' );
+	}
+
+	/**
+	 * Truncate a string to a maximum length.
+	 *
+	 * @param string $text Text to truncate.
+	 * @param int    $max  Max length.
+	 * @return string
+	 */
+	protected function truncate( $text, $max ) {
+		if ( mb_strlen( $text, 'UTF-8' ) <= $max ) {
+			return $text;
+		}
+
+		return mb_substr( $text, 0, $max, 'UTF-8' ) . '…';
 	}
 }

@@ -245,8 +245,48 @@ function aneepay_register_endpoints() {
 
 	// Admin-only: test the AneePay connection from the gateway settings page.
 	add_action( 'wp_ajax_aneepay_check_connection', 'aneepay_ajax_check_connection' );
+
+	// Admin-only: in-app request log panel.
+	add_action( 'wp_ajax_aneepay_get_logs', 'aneepay_ajax_get_logs' );
+	add_action( 'wp_ajax_aneepay_clear_logs', 'aneepay_ajax_clear_logs' );
 }
 add_action( 'rest_api_init', 'aneepay_register_endpoints' );
+
+/**
+ * Admin AJAX: return the in-app request log.
+ *
+ * @return void
+ */
+function aneepay_ajax_get_logs() {
+	check_ajax_referer( 'aneepay_logs', 'nonce' );
+
+	if ( ! current_user_can( 'manage_woocommerce' ) ) {
+		wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'aneepay-crypto-gateway' ) ) );
+	}
+
+	$gateway = new WC_Gateway_AneePay_Crypto();
+	$logs    = $gateway->api_handler->get_request_log();
+
+	wp_send_json_success( array( 'logs' => $logs, 'count' => count( $logs ) ) );
+}
+
+/**
+ * Admin AJAX: clear the in-app request log.
+ *
+ * @return void
+ */
+function aneepay_ajax_clear_logs() {
+	check_ajax_referer( 'aneepay_logs', 'nonce' );
+
+	if ( ! current_user_can( 'manage_woocommerce' ) ) {
+		wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'aneepay-crypto-gateway' ) ) );
+	}
+
+	$gateway = new WC_Gateway_AneePay_Crypto();
+	$gateway->api_handler->clear_request_log();
+
+	wp_send_json_success( array( 'cleared' => true ) );
+}
 
 /**
  * Admin AJAX: verify the AneePay connection (Account ID, domain, safe status).
@@ -291,7 +331,13 @@ function aneepay_enqueue_admin_styles( $hook_suffix ) {
 		'.aneepay-setup-card{margin:8px 0 16px;padding:12px 16px;background:#eef6fb;border:1px solid #c3ddd9;border-radius:6px;}' .
 		'.aneepay-setup-card ol{margin:6px 0 12px;padding-left:20px;}' .
 		'.aneepay-endpoint{display:inline-block;word-break:break-all;}' .
-		'.aneepay-test-connection{margin:8px 0 16px;padding:12px 16px;background:#f9f9f9;border:1px solid #ddd;border-radius:6px;}'
+		'.aneepay-test-connection{margin:8px 0 16px;padding:12px 16px;background:#f9f9f9;border:1px solid #ddd;border-radius:6px;}' .
+		'.aneepay-conversion-example{margin:8px 0 16px;padding:12px 16px;background:#f9f9f9;border:1px solid #ddd;border-radius:6px;}' .
+		'.aneepay-conversion-example ul{margin:6px 0 0;padding-left:18px;}' .
+		'.aneepay-request-log{margin:8px 0 16px;padding:12px 16px;background:#f9f9f9;border:1px solid #ddd;border-radius:6px;}' .
+		'.aneepay-request-log .aneepay-log-panel{margin-top:10px;overflow:auto;max-height:360px;}' .
+		'.aneepay-log-panel table{font-size:12px;}' .
+		'.aneepay-log-panel td{word-break:break-all;}'
 	);
 	wp_enqueue_style( 'aneepay-admin' );
 }

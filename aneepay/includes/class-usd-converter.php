@@ -106,6 +106,41 @@ class AneePay_USD_Converter {
 	}
 
 	/**
+	 * Resolve a rate WITHOUT making a network request (used for the admin
+	 * preview). Checks the cached automatic rate first, then the manual rate.
+	 *
+	 * @param string $currency Store currency code.
+	 * @param string $source   (out) Resolved source: auto|manual.
+	 * @return float|null Units of store currency per 1 USD, or null.
+	 */
+	public function peek_fiat_per_usd( $currency, &$source ) {
+		$currency = strtoupper( trim( (string) $currency ) );
+
+		if ( 'USD' === $currency ) {
+			$source = 'auto';
+			return 1.0;
+		}
+
+		if ( $this->is_auto_enabled() ) {
+			$cached = get_transient( 'aneepay_fiat_rate_' . strtolower( $currency ) );
+
+			if ( is_array( $cached ) && isset( $cached['rate'] ) && (float) $cached['rate'] > 0 ) {
+				$source = 'auto';
+				return (float) $cached['rate'];
+			}
+		}
+
+		$manual = $this->get_manual_rate();
+
+		if ( null !== $manual && $manual > 0 ) {
+			$source = 'manual';
+			return $manual;
+		}
+
+		return null;
+	}
+
+	/**
 	 * Convert a store-total into the token amount to request.
 	 *
 	 * @param float|string $store_total Order total in the store currency.
