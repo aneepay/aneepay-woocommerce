@@ -317,28 +317,35 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 			throw new Exception( __( 'Order total must be greater than zero.', 'aneepay-crypto-gateway' ) );
 		}
 
+		// Idempotency gate: never create a second AneePay payment for an order
+		// that is still awaiting the same hosted payment. This protects against
+		// double-clicks / reloads of the order-pay page (would otherwise orphan
+		// a payment or risk a double charge).
+		$existing_url    = (string) $order->get_meta( '_aneepay_checkout_url', true );
+		$existing_status = (string) $order->get_meta( '_aneepay_payment_status', true );
+
+		if ( '' !== $existing_url && in_array( $existing_status, array( '', 'pending' ), true ) ) {
+			$order->update_status( 'pending', __( 'AneePay: reusing the existing pending payment.', 'aneepay-crypto-gateway' ) );
+			wc_setcookie( 'aneepay_order', (string) $order_id, time() + HOUR_IN_SECONDS, is_ssl() );
+
+			return array(
+				'result'   => 'success',
+				'redirect' => $existing_url,
+			);
+		}
+
 		// Convert the order total (store currency) into the token amount.
 		$converter = new AneePay_USD_Converter( $this );
 		$converted = $converter->convert( $amount, $order->get_currency() );
 
 		$token_amount = (string) number_format( $converted['token_amount'], 2, '.', '' );
-		$created      = $this->api_handler->create_payment( $token_amount, $order );
 
-		$order->add_meta_data( '_aneepay_payment_id', $created['payment_id'], true );
-		$order->add_meta_data( '_aneepay_operation_id', $created['operation_id'], true );
-		$order->add_meta_data( '_aneepay_token', $this->api_handler->get_token(), true );
-		$order->add_meta_data( '_aneepay_network', $this->api_handler->get_network(), true );
-		$order->add_meta_data( '_aneepay_sandbox', $this->api_handler->is_sandbox() ? 'yes' : 'no', true );
-		$order->add_meta_data( '_aneepay_payment_status', 'pending', true );
-		$order->add_meta_data( '_aneepay_checkout_url', $created['checkout_url'], true );
+		// If the API call fails/times out, the exception propagates and the
+		// order is left untouched (no meta, no status change) — it never
+		// looks "half-created".
+		$created = $this->api_handler->create_payment( $token_amount, $order );
 
-		// Store the conversion context for display and reconciliation.
-		$order->add_meta_data( '_aneepay_token_amount', $token_amount, true );
-		$order->add_meta_data( '_aneepay_order_currency', $converted['currency'], true );
-		$order->add_meta_data( '_aneepay_order_total', (string) $amount, true );
-		$order->add_meta_data( '_aneepay_usd_amount', (string) number_format( $converted['usd_amount'], 2, '.', '' ), true );
-		$order->add_meta_data( '_aneepay_fiat_per_usd', (string) $converted['fiat_per_usd'], true );
-		$order->add_meta_data( '_aneepay_rate_source', $converted['source'], true );
+		$this->attach_payment_to_order( $order, $created, $converted, $token_amount, $amount );
 
 		$order->save();
 
@@ -361,6 +368,34 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 			'result'   => 'success',
 			'redirect' => $created['checkout_url'],
 		);
+	}
+
+	/**
+	 * Store the payment and conversion context on the order.
+	 *
+	 * @param WC_Order $order       Order object.
+	 * @param array    $created     AneePay create-payment response.
+	 * @param array    $converted   Conversion result (token_amount, fiat_per_usd, source, ...).
+	 * @param string   $token_amount Token amount string.
+	 * @param float    $order_total  Original store total.
+	 * @return void
+	 */
+	protected function attach_payment_to_order( $order, $created, $converted, $token_amount, $order_total ) {
+		$order->add_meta_data( '_aneepay_payment_id', $created['payment_id'], true );
+		$order->add_meta_data( '_aneepay_operation_id', $created['operation_id'], true );
+		$order->add_meta_data( '_aneepay_token', $this->api_handler->get_token(), true );
+		$order->add_meta_data( '_aneepay_network', $this->api_handler->get_network(), true );
+		$order->add_meta_data( '_aneepay_sandbox', $this->api_handler->is_sandbox() ? 'yes' : 'no', true );
+		$order->add_meta_data( '_aneepay_payment_status', 'pending', true );
+		$order->add_meta_data( '_aneepay_checkout_url', $created['checkout_url'], true );
+
+		// Store the conversion context for display and reconciliation.
+		$order->add_meta_data( '_aneepay_token_amount', $token_amount, true );
+		$order->add_meta_data( '_aneepay_order_currency', $converted['currency'], true );
+		$order->add_meta_data( '_aneepay_order_total', (string) $order_total, true );
+		$order->add_meta_data( '_aneepay_usd_amount', (string) number_format( $converted['usd_amount'], 2, '.', '' ), true );
+		$order->add_meta_data( '_aneepay_fiat_per_usd', (string) $converted['fiat_per_usd'], true );
+		$order->add_meta_data( '_aneepay_rate_source', $converted['source'], true );
 	}
 
 	/**
