@@ -895,10 +895,14 @@ function aneepay_apply_payment_status( $order, $status, $data = array() ) {
 			}
 
 			$order->update_status( 'failed', $note );
+			// Restore stock that was reserved when the hosted payment started.
+			wc_increase_stock_levels( $order->get_id() );
 			break;
 
 		case 'cancelled':
 			$order->update_status( 'cancelled', __( 'AneePay: payment cancelled by the customer.', 'aneepay-crypto-gateway' ) );
+			// Restore stock that was reserved when the hosted payment started.
+			wc_increase_stock_levels( $order->get_id() );
 			break;
 
 		case 'pending':
