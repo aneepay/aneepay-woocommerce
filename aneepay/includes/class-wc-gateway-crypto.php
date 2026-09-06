@@ -819,9 +819,13 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 			return;
 		}
 
-		echo '<div class="aneepay-payment" data-order-id="' . esc_attr( $order_id ) . '" data-payment-status="' . esc_attr( (string) $status ) . '">';
-		esc_html_e( 'Waiting for the payment to be confirmed on the blockchain. This page updates automatically.', 'aneepay-crypto-gateway' );
-		echo '</div>';
+		$args = array( 'order' => $order );
+
+		if ( function_exists( 'wc_get_template' ) ) {
+			wc_get_template( 'aneepay-payment.php', $args, '', ANEEPAY_PLUGIN_DIR . 'templates/' );
+		} else {
+			include ANEEPAY_PLUGIN_DIR . 'templates/aneepay-payment.php';
+		}
 	}
 
 	/**

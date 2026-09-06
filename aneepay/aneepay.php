@@ -206,8 +206,9 @@ function aneepay_enqueue_frontend_scripts() {
 		'aneepay-checkout',
 		'aneepayParams',
 		array(
-			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-			'nonce'   => wp_create_nonce( 'aneepay_status' ),
+			'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
+			'nonce'         => wp_create_nonce( 'aneepay_status' ),
+			'checkingLabel' => __( 'Checking...', 'aneepay-crypto-gateway' ),
 		)
 	);
 
@@ -229,7 +230,16 @@ function aneepay_enqueue_frontend_scripts() {
 		'.aneepay-result-order{background:#f6f7f7;border:1px solid #e0e0e0;border-radius:6px;padding:12px 16px;margin:16px 0;text-align:left;font-size:14px;}' .
 		'.aneepay-result-order p{margin:2px 0;}' .
 		'.aneepay-result-actions{margin:16px 0 0;}' .
-		'.aneepay-result-actions .button{margin:0 4px;}'
+		'.aneepay-result-actions .button{margin:0 4px;}' .
+		'.aneepay-payment-card{max-width:560px;margin:16px auto;background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:24px;text-align:center;}' .
+		'.aneepay-payment-spinner{width:40px;height:40px;margin:0 auto 16px;border:4px solid #e0e0e0;border-top-color:#7f54b3;border-radius:50%;animation:aneepay-spin .8s linear infinite;}' .
+		'@keyframes aneepay-spin{to{transform:rotate(360deg)}}' .
+		'.aneepay-payment-title{margin:0 0 6px;font-size:16px;}' .
+		'.aneepay-payment-sub{margin:0 0 12px;color:#50575e;}' .
+		'.aneepay-payment-amount{margin:0 0 12px;}' .
+		'.aneepay-payment-info{background:#f6f7f7;border:1px solid #e0e0e0;border-radius:6px;padding:10px 14px;margin:0 0 16px;text-align:left;font-size:13px;color:#50575e;}' .
+		'.aneepay-payment-info p{margin:0;}' .
+		'.aneepay-payment-actions .button{min-width:160px;}'
 	);
 	wp_enqueue_style( 'aneepay-checkout' );
 }
