@@ -1,0 +1,17 @@
+# WordPress / WooCommerce runtime data (used by docker-compose bind mounts)
+/wp-content
+/docker/runtime/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# PHP tooling
+/vendor/
+composer.lock
+
+# Logs
+*.log
