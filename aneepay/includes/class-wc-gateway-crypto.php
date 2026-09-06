@@ -219,6 +219,19 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 				'default'     => 'no',
 				'desc_tip'    => true,
 			),
+			'sync_interval' => array(
+				'title'       => __( 'Status Sync Interval', 'aneepay-crypto-gateway' ),
+				'type'        => 'select',
+				'description' => __( 'How often the plugin polls AneePay for pending orders (fallback to the webhook).', 'aneepay-crypto-gateway' ),
+				'default'     => 'every_five_minutes',
+				'desc_tip'    => true,
+				'options'     => array(
+					'every_five_minutes'    => __( 'Every 5 minutes', 'aneepay-crypto-gateway' ),
+					'every_ten_minutes'     => __( 'Every 10 minutes', 'aneepay-crypto-gateway' ),
+					'every_fifteen_minutes' => __( 'Every 15 minutes', 'aneepay-crypto-gateway' ),
+					'every_thirty_minutes'  => __( 'Every 30 minutes', 'aneepay-crypto-gateway' ),
+				),
+			),
 			array(
 				'type' => 'sectionend',
 				'id'   => 'aneepay_section_advanced',
@@ -242,7 +255,13 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 			return false;
 		}
 
-		return parent::process_admin_options();
+		$result = parent::process_admin_options();
+
+		if ( $result ) {
+			aneepay_schedule_sync();
+		}
+
+		return $result;
 	}
 
 	/**
@@ -779,45 +798,72 @@ function aneepay_ajax_check_status() {
  * @return void
  */
 function aneepay_cron_sync_pending_orders() {
-	$query = wc_get_orders(
-		array(
-			'limit'        => 20,
-			'status'       => array( 'pending', 'on-hold' ),
-			'payment_method' => ANEEPAY_PAYMENT_GATEWAY_ID,
-			'return'       => 'ids',
-		)
-	);
+	// No-overlap guard: never run two sync batches concurrently.
+	if ( get_transient( 'aneepay_cron_lock' ) ) {
+		return;
+	}
 
-	foreach ( $query as $order_id ) {
-		$order = wc_get_order( $order_id );
+	set_transient( 'aneepay_cron_lock', 1, 5 * MINUTE_IN_SECONDS );
 
-		if ( ! $order ) {
-			continue;
+	try {
+		$query = wc_get_orders(
+			array(
+				'limit'        => 20,
+				'status'       => array( 'pending', 'on-hold' ),
+				'payment_method' => ANEEPAY_PAYMENT_GATEWAY_ID,
+				'return'       => 'ids',
+			)
+		);
+
+		foreach ( $query as $order_id ) {
+			$order = wc_get_order( $order_id );
+
+			if ( ! $order ) {
+				continue;
+			}
+
+			$status = $order->get_meta( '_aneepay_payment_status', true );
+
+			if ( in_array( $status, array( 'success', 'failed', 'cancelled' ), true ) ) {
+				continue;
+			}
+
+			$payment_id = (string) $order->get_meta( '_aneepay_payment_id', true );
+
+			if ( empty( $payment_id ) ) {
+				continue;
+			}
+
+			$gateway = new WC_Gateway_AneePay_Crypto();
+			$data    = $gateway->api_handler->get_payment( $payment_id );
+
+			if ( null === $data || empty( $data['status'] ) ) {
+				continue;
+			}
+
+			aneepay_apply_payment_status( $order, $data['status'] );
 		}
-
-		$status = $order->get_meta( '_aneepay_payment_status', true );
-
-		if ( in_array( $status, array( 'success', 'failed', 'cancelled' ), true ) ) {
-			continue;
-		}
-
-		$payment_id = (string) $order->get_meta( '_aneepay_payment_id', true );
-
-		if ( empty( $payment_id ) ) {
-			continue;
-		}
-
-		$gateway = new WC_Gateway_AneePay_Crypto();
-		$data    = $gateway->api_handler->get_payment( $payment_id );
-
-		if ( null === $data || empty( $data['status'] ) ) {
-			continue;
-		}
-
-		aneepay_apply_payment_status( $order, $data['status'] );
+	} catch ( Exception $e ) {
+		aneepay_log_sync_error( $e );
+	} finally {
+		delete_transient( 'aneepay_cron_lock' );
 	}
 }
 add_action( 'aneepay_sync_pending_orders', 'aneepay_cron_sync_pending_orders' );
+
+/**
+ * Log a message during the sync run (only when the gateway debug is enabled).
+ *
+ * @param Exception $e Exception to log.
+ * @return void
+ */
+function aneepay_log_sync_error( $e ) {
+	$gateway = new WC_Gateway_AneePay_Crypto();
+
+	if ( isset( $gateway->api_handler ) && is_callable( array( $gateway->api_handler, 'log' ) ) ) {
+		$gateway->api_handler->log( 'cron_sync', $e->getMessage(), 'error' );
+	}
+}
 
 /**
  * Update an order based on a known payment status.

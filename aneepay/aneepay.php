@@ -103,8 +103,7 @@ function aneepay_activate_plugin() {
 		wp_die( esc_html__( 'AneePay Crypto Gateway requires WooCommerce to be installed and activated. Plugin deactivated.', 'aneepay-crypto-gateway' ) );
 	}
 
-	wp_clear_scheduled_hook( 'aneepay_sync_pending_orders' );
-	wp_schedule_event( time() + MINUTE_IN_SECONDS, 'every_five_minutes', 'aneepay_sync_pending_orders' );
+	aneepay_schedule_sync();
 }
 register_activation_hook( __FILE__, 'aneepay_activate_plugin' );
 
@@ -119,15 +118,42 @@ function aneepay_deactivate_plugin() {
 register_deactivation_hook( __FILE__, 'aneepay_deactivate_plugin' );
 
 /**
- * Register a custom cron interval.
+ * Schedule (or re-schedule) the pending-orders sync using the current
+ * configured interval.
+ *
+ * @return void
+ */
+function aneepay_schedule_sync() {
+	wp_clear_scheduled_hook( 'aneepay_sync_pending_orders' );
+
+	$gateway  = new WC_Gateway_AneePay_Crypto();
+	$interval = (string) $gateway->get_option( 'sync_interval', 'every_five_minutes' );
+
+	wp_schedule_event( time() + 60, $interval, 'aneepay_sync_pending_orders' );
+}
+
+/**
+ * Register the custom cron intervals.
  *
  * @param array $schedules Cron schedule intervals.
  * @return array
  */
 function aneepay_add_cron_interval( $schedules ) {
-	$schedules['every_five_minutes'] = array(
+	$schedules['every_five_minutes']    = array(
 		'interval' => 5 * MINUTE_IN_SECONDS,
 		'display'  => __( 'Every five minutes', 'aneepay-crypto-gateway' ),
+	);
+	$schedules['every_ten_minutes']     = array(
+		'interval' => 10 * MINUTE_IN_SECONDS,
+		'display'  => __( 'Every ten minutes', 'aneepay-crypto-gateway' ),
+	);
+	$schedules['every_fifteen_minutes'] = array(
+		'interval' => 15 * MINUTE_IN_SECONDS,
+		'display'  => __( 'Every fifteen minutes', 'aneepay-crypto-gateway' ),
+	);
+	$schedules['every_thirty_minutes']  = array(
+		'interval' => 30 * MINUTE_IN_SECONDS,
+		'display'  => __( 'Every thirty minutes', 'aneepay-crypto-gateway' ),
 	);
 	return $schedules;
 }
