@@ -1,0 +1,61 @@
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: prestashop
+      MARIADB_USER: ps
+      MARIADB_PASSWORD: ps
+      MARIADB_ROOT_PASSWORD: root
+    volumes:
+      - ps_db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  prestashop:
+    image: aneepay-prestashop:8.1
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8084:80"
+    environment:
+      DB_SERVER: db
+      DB_USER: ps
+      DB_PASSWD: ps
+      DB_NAME: prestashop
+      DB_PREFIX: ps_
+      PS_INSTALL_AUTO: "1"
+      PS_INSTALL_DB: "0"
+      PS_DOMAIN: localhost:8084
+      PS_LANGUAGE: en
+      PS_COUNTRY: GB
+      PS_FOLDER_ADMIN: admin
+      ADMIN_MAIL: admin@example.com
+      ADMIN_PASSWD: admin1234
+      PS_DEV_MODE: "0"
+    volumes:
+      - ps_core:/var/www/html
+      - ../../plugins/prestashop/ps_aneepay:/var/www/html/modules/ps_aneepay
+      - ./enable_ps.php:/opt/enable_ps.php:ro
+  setup:
+    image: aneepay-prestashop:8.1
+    build: .
+    depends_on:
+      prestashop:
+        condition: service_started
+    volumes:
+      - ps_core:/var/www/html
+      - ../../plugins/prestashop/ps_aneepay:/var/www/html/modules/ps_aneepay
+      - ./setup.sh:/opt/setup.sh:ro
+      - ./enable_ps.php:/opt/enable_ps.php:ro
+    command: ["sh", "/opt/setup.sh"]
+
+volumes:
+  ps_db:
+  ps_core:

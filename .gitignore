@@ -24,4 +24,5 @@ composer.lock
 *.log
 
 # Local docs (INTEGRATION.md + ROADMAPs) — not part of the repo
-/docs
+/docs# PrestaShop auto-generated module config
+**/config.xml
