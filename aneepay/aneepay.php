@@ -218,7 +218,18 @@ function aneepay_enqueue_frontend_scripts() {
 		'.aneepay-checkout-breakdown .aneepay-breakdown-title{font-weight:600;margin:0 0 4px;}' .
 		'.aneepay-checkout-breakdown ul{margin:0;padding-left:18px;color:#50575e;}' .
 		'.aneepay-checkout-breakdown li{margin-bottom:2px;}' .
-		'.aneepay-checkout-breakdown .aneepay-breakdown-source{font-size:12px;color:#8c8f94;font-style:italic;}'
+		'.aneepay-checkout-breakdown .aneepay-breakdown-source{font-size:12px;color:#8c8f94;font-style:italic;}' .
+		'.aneepay-result{max-width:640px;margin:40px auto;padding:0 16px;text-align:center;}' .
+		'.aneepay-result-card{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:32px 24px;}' .
+		'.aneepay-result-icon{width:56px;height:56px;line-height:56px;font-size:28px;border-radius:50%;margin:0 auto 16px;}' .
+		'.aneepay-result-icon.is-success{background:#e6f4ea;color:#008a20;}' .
+		'.aneepay-result-icon.is-fail{background:#fde8e8;color:#d63638;}' .
+		'.aneepay-result-title{margin:0 0 8px;}' .
+		'.aneepay-result-text{margin:0 0 16px;color:#50575e;}' .
+		'.aneepay-result-order{background:#f6f7f7;border:1px solid #e0e0e0;border-radius:6px;padding:12px 16px;margin:16px 0;text-align:left;font-size:14px;}' .
+		'.aneepay-result-order p{margin:2px 0;}' .
+		'.aneepay-result-actions{margin:16px 0 0;}' .
+		'.aneepay-result-actions .button{margin:0 4px;}'
 	);
 	wp_enqueue_style( 'aneepay-checkout' );
 }
@@ -440,31 +451,16 @@ function aneepay_render_result_html( $result, $order, $is_paid ) {
 		$result = 'success';
 	}
 
-	get_header();
+	$args = array(
+		'result'  => $result,
+		'order'   => $order,
+		'is_paid' => $is_paid,
+	);
 
-	echo '<div class="aneepay-result">';
-
-	if ( 'success' === $result ) {
-		echo '<h1>' . esc_html__( 'Payment completed', 'aneepay-crypto-gateway' ) . '</h1>';
-		echo '<p>' . esc_html__( 'Thank you! Your payment was successful.', 'aneepay-crypto-gateway' ) . '</p>';
-
-		if ( $order ) {
-			echo '<p><a class="button" href="' . esc_url( $order->get_checkout_order_received_url() ) . '">' . esc_html__( 'View order', 'aneepay-crypto-gateway' ) . '</a></p>';
-		} else {
-			echo '<p><a class="button" href="' . esc_url( wc_get_page_permalink( 'shop' ) ) . '">' . esc_html__( 'Back to shop', 'aneepay-crypto-gateway' ) . '</a></p>';
-		}
+	if ( function_exists( 'wc_get_template' ) ) {
+		wc_get_template( 'aneepay-result.php', $args, '', ANEEPAY_PLUGIN_DIR . 'templates/' );
 	} else {
-		echo '<h1>' . esc_html__( 'Payment not completed', 'aneepay-crypto-gateway' ) . '</h1>';
-		echo '<p>' . esc_html__( 'The payment was cancelled or could not be completed. Your order has not been charged.', 'aneepay-crypto-gateway' ) . '</p>';
-
-		if ( $order ) {
-			echo '<p><a class="button" href="' . esc_url( $order->get_checkout_payment_url() ) . '">' . esc_html__( 'Try again', 'aneepay-crypto-gateway' ) . '</a></p>';
-		} else {
-			echo '<p><a class="button" href="' . esc_url( wc_get_page_permalink( 'shop' ) ) . '">' . esc_html__( 'Back to shop', 'aneepay-crypto-gateway' ) . '</a></p>';
-		}
+		extract( $args, EXTR_SKIP ); // phpcs:ignore WordPress.PHP.DontExtract.extract_extract
+		include ANEEPAY_PLUGIN_DIR . 'templates/aneepay-result.php';
 	}
-
-	echo '</div>';
-
-	get_footer();
 }
