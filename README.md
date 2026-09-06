@@ -32,17 +32,25 @@ writes the artifact to `dist/<platform>/`. The version is read from `VERSION`
 
 ## Local development
 
-The WooCommerce test shop is up from [`docker/docker-compose.yml`](docker/docker-compose.yml):
+### WooCommerce
 
 ```bash
-cd docker
+cd docker/woocommerce
 docker compose up --watch
 # WooCommerce: http://localhost:8081  (admin / admin)
 ```
 
-The container bind-mounts `plugins/woocommerce/aneepay` directly, so code changes
-are picked up without a rebuild. OpenCart/PrestaShop test shops are added the same
-way as they are implemented (see `docs/ROADMAP-*.md`).
+### OpenCart
+
+```bash
+cd docker/opencart
+docker compose up --build
+# OpenCart: http://localhost:8082  (admin / admin)
+```
+
+Each container bind-mounts (WooCommerce) or installs (OpenCart) the matching
+plugin, so changes are picked up with a rebuild. PrestaShop stands are added the
+same way as it is implemented (see `docs/ROADMAP-PRESTASHOP.md`).
 
 ## Structure
 
@@ -55,7 +63,7 @@ way as they are implemented (see `docs/ROADMAP-*.md`).
 │   ├── opencart/aneepay/              # OC extension (skeleton)
 │   └── prestashop/ps_aneepay/         # PS module (skeleton)
 ├── scripts/pack.sh                    # build / package artifacts
-├── docker/                            # local test shop (WooCommerce)
+├── docker/                            # local test shops (woocommerce/, opencart/)
 └── .github/workflows/release.yml      # CI: lint + package + release
 ```
 

@@ -1,0 +1,54 @@
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: opencart
+      MARIADB_USER: oc
+      MARIADB_PASSWORD: oc
+      MARIADB_ROOT_PASSWORD: root
+    volumes:
+      - oc_db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  opencart:
+    image: aneepay-opencart:3.0.3.8
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8082:80"
+    volumes:
+      - oc_core:/var/www/html
+
+  # One-shot provisioning: headless OpenCart install + AneePay extension install.
+  setup:
+    image: aneepay-opencart:3.0.3.8
+    depends_on:
+      opencart:
+        condition: service_started
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: oc
+      DB_PASS: oc
+      DB_NAME: opencart
+      HTTP_SERVER: http://localhost:8082/
+    volumes:
+      - oc_core:/var/www/html
+      - ../../plugins/opencart/aneepay:/plugin:ro
+      - ./setup.sh:/opt/setup.sh:ro
+      - ./enable.php:/opt/enable.php:ro
+    command: ["sh", "/opt/setup.sh"]
+
+volumes:
+  oc_db:
+  oc_core:
