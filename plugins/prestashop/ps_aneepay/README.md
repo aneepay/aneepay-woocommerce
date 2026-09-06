@@ -1,9 +1,9 @@
-# AneePay Crypto Gateway — PrestaShop 1.7 / 8.x (черновик)
+# AneePay Crypto Gateway — PrestaShop 1.7 / 8.x (skeleton)
 
-Статус: **каркас, реализация не начата.** План — `../../docs/ROADMAP-PRESTASHOP.md`.
-Референс-реализация — `../woocommerce/aneepay`.
+Status: **skeleton, implementation not started.** Plan — `../../docs/ROADMAP-PRESTASHOP.md`.
+Reference implementation — `../woocommerce/aneepay`.
 
-## Требуемая структура модуля
+## Required module structure
 
 ```
 ps_aneepay/
@@ -12,24 +12,25 @@ ps_aneepay/
   classes/AneePayUsdConverter.php
   classes/AneePayWebhook.php
   classes/AneePayOrder.php                (ps_aneepay_order)
-  controllers/front/payment.php           (создание заказа + редирект)
+  controllers/front/payment.php           (create order + redirect)
   controllers/front/webhook.php           (STATUS_URL)
   controllers/front/success.php           (SUCCESS_URL)
   controllers/front/fail.php              (FAIL_URL)
-  controllers/front/cron.php              (поллинг)
+  controllers/front/cron.php              (polling)
   views/templates/front/payment_pending.tpl
   views/templates/front/payment_result.tpl
   views/templates/front/payment_option.tpl
   logo.png
-  index.php                               (в каждой папке — требование PS)
+  index.php                               (in every folder — required by PS)
 ```
 
-## Ключевые моменты
+## Key points
 
 - `status_url` / `success_url` / `fail_url` —
   `index.php?fc=module&module=ps_aneepay&controller=webhook|success|fail`.
-- Заказ валидируется через `validateOrder()`; меты — в таблице `ps_aneepay_order`.
-- Смена статуса — `OrderHistory`; нужен маппинг «Ожидание оплаты» / «Оплачен» /
-  «Отменён» по конфигу изделия.
-- Поллинг запускается внешним cron на `.../cron`.
-- Курс валюта→USD: Frankfurter/ECB + `Currency` fallback + ручной курс.
+- The order is validated via `validateOrder()`; metadata lives in the
+  `ps_aneepay_order` table.
+- Status change — `OrderHistory`; a mapping to "Awaiting payment" / "Payment
+  accepted" / "Canceled" is configured.
+- Polling is driven by an external cron calling `.../cron`.
+- Currency→USD rate: Frankfurter/ECB + `Currency` fallback + manual rate.
