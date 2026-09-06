@@ -1,31 +1,42 @@
-# AneePay Crypto Gateway — OpenCart 3.x (skeleton)
+# AneePay Crypto Gateway — OpenCart 3.x
 
-Status: **skeleton, implementation not started.** Plan — `../../docs/ROADMAP-OPENCART.md`.
-Reference implementation — `../woocommerce/aneepay`.
+Status: **working implementation** (mirrors the WooCommerce plugin).
+Reference implementation — `../woocommerce/aneepay`. Plan — `../../docs/ROADMAP-OPENCART.md`.
 
-## Required extension structure
+## Files
 
 ```
-aneepay/                                  (contents of this zip / ocmod)
-  admin/controller/extension/payment/aneepay.php
+aneepay/
+  admin/controller/extension/payment/aneepay.php    # settings + AJAX + install
+  admin/model/extension/payment/aneepay.php          # tables + request log
   admin/language/en-gb/extension/payment/aneepay.php
-  admin/model/extension/payment/aneepay.php     (oc_aneepay_log table)
   admin/view/template/extension/payment/aneepay.twig
-  catalog/controller/extension/payment/aneepay.php  (index/confirm/callback)
-  catalog/model/extension/payment/aneepay.php       (oc_aneepay_order)
-  catalog/view/theme/default/template/extension/payment/aneepay.twig
+  catalog/controller/extension/payment/aneepay.php   # index/confirm/callback/success/fail/cron/check
+  catalog/model/extension/payment/aneepay.php          # aneepay_order mapping
   catalog/language/en-gb/extension/payment/aneepay.php
-  system/library/aneepay/aneepay.php   (API client + log)
-  system/library/aneepay/usd-converter.php
-  system/library/aneepay/webhook.php
-install.xml  (ocmod manifest)
+  catalog/view/theme/default/template/extension/payment/aneepay.twig
+  catalog/view/theme/default/template/extension/payment/aneepay_result.twig
+  system/library/aneepay/aneepay.php                   # API client + webhook signature + log
+  system/library/aneepay/usd-converter.php             # fiat -> USD -> token
+  system/library/aneepay/webhook.php                   # resolve order + apply status
+install.xml                                            # ocmod manifest (add-on files)
 ```
 
-## Key points
+## Endpoints
 
-- `status_url` / `success_url` / `fail_url` — routes
-  `index.php?route=extension/payment/aneepay/callback|success|fail`.
-- Order metadata — the `oc_aneepay_order` table (equivalent of WooCommerce meta).
-- OpenCart has no WP-Cron: polling is driven by an external cron calling the
-  `.../cron` controller; the cron line is shown in the admin.
-- Currency→USD rate: Frankfurter/ECB + `oc_currency` fallback + manual rate.
+- `status_url` (webhook) — `index.php?route=extension/payment/aneepay/callback`
+- `success_url` — `index.php?route=extension/payment/aneepay/success`
+- `fail_url` — `index.php?route=extension/payment/aneepay/fail`
+- polling — `index.php?route=extension/payment/aneepay/cron` (schedule it in cron)
+
+## Notes
+
+- Setup: Extensions → Payments → AneePay → Edit. Enter the Account ID + Webhook
+  Secret (UUID + HMAC-SHA256 signature verification, fail-closed). Optionally
+  toggle Test mode (Amoy/USDC).
+- Amount semantics: token amount = store_total converted via Frankfurter/ECB
+  (auto) + store rate fallback + manual rate; rounded **up** (ceil) in the
+  merchant's favour.
+- Order metadata is stored in the `aneepay_order` table; the webhook resolves the
+  order by `payment_id` / `operation_id` (128-bit int, kept exact) or `Order #N`.
+- Cron is not built into OpenCart: add the cron URL above to your server crontab.

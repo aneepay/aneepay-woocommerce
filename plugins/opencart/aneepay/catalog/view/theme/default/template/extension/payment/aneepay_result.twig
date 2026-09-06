@@ -1,0 +1,49 @@
+{{ page === 'success' ? text_success : text_failed }}
+
+{% if is_success %}
+	<p>{{ text_awaiting }}</p>
+
+	{% if order_id %}
+		<p>Order #{{ order_id }}</p>
+	{% endif %}
+
+	{% if payment_id %}
+		<p>AneePay payment id: {{ payment_id }}</p>
+	{% endif %}
+
+	<p>
+		<button id="aneepay-i-paid" class="btn btn-primary">{{ button_i_paid }}</button>
+	</p>
+{% else %}
+	<p>
+		<a href="{{ checkout_url }}" class="btn btn-primary">{{ button_retry }}</a>
+	</p>
+{% endif %}
+
+<p><a href="{{ shop_url }}">{{ button_shop }}</a></p>
+
+<script>
+(function () {
+	var orderId = {{ order_id|default(0) }};
+	var iPaid = document.getElementById('aneepay-i-paid');
+	if (!orderId || !iPaid) { return; }
+	iPaid.addEventListener('click', function () {
+		iPaid.disabled = true;
+		iPaid.textContent = '{{ checking_label }}';
+		var body = new URLSearchParams();
+		body.append('order_id', orderId);
+		fetch('index.php?route=extension/payment/aneepay/check', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: body.toString()
+		}).then(function (r) { return r.json(); }).then(function (d) {
+			if (d && (d.status === 'success' || d.status === 'failed' || d.status === 'cancelled')) {
+				window.location.reload();
+			} else {
+				iPaid.disabled = false;
+				iPaid.textContent = '{{ button_i_paid }}';
+			}
+		});
+	});
+})();
+</script>

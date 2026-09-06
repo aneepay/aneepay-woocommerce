@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modification>
+  <name>AneePay Crypto Gateway (USDT/USDC/DAI)</name>
+  <code>aneepay</code>
+  <version>1.2.0</version>
+  <author>AneePay</author>
+  <link>https://aneepay.com</link>
+  <!-- This extension only adds new files (via the upload/ folder); no core
+       file modifications are required, so no <operation> entries are needed. -->
+</modification>

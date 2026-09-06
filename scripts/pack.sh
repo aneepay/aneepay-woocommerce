@@ -24,6 +24,10 @@ DIST="$ROOT/dist"
 fail() { echo "ERROR: $*" >&2; exit 1; }
 warn() { echo "WARN: $*" >&2; }
 
+SRC_WC="plugins/woocommerce/aneepay"
+SRC_OC="plugins/opencart/aneepay"
+SRC_PS="plugins/prestashop/ps_aneepay"
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -44,34 +48,69 @@ php_lint() {
 }
 
 check_platform() {
-  local p="$1" src="$2"
+  local p="$1"
   case "$p" in
     wc)
-      [ -f "$src/aneepay.php" ] || fail "нет $src/aneepay.php"
-      grep -qE '^ \* Version:' "$src/aneepay.php" || warn "нет WP-header 'Version:' в aneepay.php"
+      [ -f "$SRC_WC/aneepay.php" ] || fail "нет $SRC_WC/aneepay.php"
+      grep -qE '^ \* Version:' "$SRC_WC/aneepay.php" || warn "нет WP-header 'Version:' в aneepay.php"
       ;;
     oc)
-      [ -f "$src/install.xml" ] \
+      [ -d "$SRC_OC/upload" ] || [ -d "$SRC_OC/admin" ] || fail "нет исходников расширения OC"
+      [ -f "$SRC_OC/install.xml" ] \
         || warn "нет install.xml (для ocmod/загрузки расширения OC 3.x оба формата валидны)"
       ;;
     ps)
       local dir
       while IFS= read -r -d '' dir; do
         [ -f "$dir/index.php" ] || fail "нет index.php (требование PrestaShop): $dir"
-      done < <(find "$src" -type d -print0)
-      [ -f "$src/logo.png" ] || warn "нет logo.png в $src"
+      done < <(find "$SRC_PS" -type d -print0)
+      [ -f "$SRC_PS/logo.png" ] || warn "нет logo.png в $SRC_PS"
       ;;
   esac
 }
 
-make_zip() {
-  # $1 — исходная папка, $2 — путь к итоговому .zip, $3 — корневая папка в архиве
-  local src="$1" out="$2" rootname="$3" tmp
-  tmp="$(mktemp -d)"
-  mkdir -p "$tmp/$rootname"
-  cp -a "$src/." "$tmp/$rootname/"
-  ( cd "$tmp" && zip -qr "$out" "$rootname" )
-  rm -rf "$tmp"
+# Zip the *contents* of a staging directory (so the caller controls the root path).
+zip_stage() {
+  local stage="$1" out="$2"
+  ( cd "$stage" && zip -qr "$out" . )
+  rm -rf "$stage"
+}
+
+# ---------------------------------------------------------------------------
+# per-platform assembly
+# ---------------------------------------------------------------------------
+
+build_wc() {
+  local stage dest
+  stage="$(mktemp -d)"
+  dest="$DIST/wc"; mkdir -p "$dest"
+  mkdir -p "$stage/aneepay"
+  cp -a "$SRC_WC/." "$stage/aneepay/"
+  zip_stage "$stage" "$dest/aneepay.zip"
+  echo "   -> $dest/aneepay.zip"
+}
+
+build_oc() {
+  local stage dest
+  stage="$(mktemp -d)"
+  dest="$DIST/oc"; mkdir -p "$dest"
+  mkdir -p "$stage/upload/admin" "$stage/upload/catalog" "$stage/upload/system"
+  cp -a "$SRC_OC/admin/." "$stage/upload/admin/"
+  cp -a "$SRC_OC/catalog/." "$stage/upload/catalog/"
+  cp -a "$SRC_OC/system/." "$stage/upload/system/"
+  [ -f "$SRC_OC/install.xml" ] && cp "$SRC_OC/install.xml" "$stage/install.xml"
+  zip_stage "$stage" "$dest/aneepay-${VERSION}.ocmod.zip"
+  echo "   -> $dest/aneepay-${VERSION}.ocmod.zip"
+}
+
+build_ps() {
+  local stage dest
+  stage="$(mktemp -d)"
+  dest="$DIST/ps"; mkdir -p "$dest"
+  mkdir -p "$stage/ps_aneepay"
+  cp -a "$SRC_PS/." "$stage/ps_aneepay/"
+  zip_stage "$stage" "$dest/ps_aneepay.zip"
+  echo "   -> $dest/ps_aneepay.zip"
 }
 
 # ---------------------------------------------------------------------------
@@ -87,9 +126,9 @@ mkdir -p "$DIST"
 
 for p in "${platforms[@]}"; do
   case "$p" in
-    wc) src="plugins/woocommerce/aneepay";    base="aneepay";     fname="aneepay.zip" ;;
-    oc) src="plugins/opencart/aneepay";       base="aneepay";     fname="aneepay-${VERSION}.ocmod.zip" ;;
-    ps) src="plugins/prestashop/ps_aneepay";  base="ps_aneepay";  fname="ps_aneepay.zip" ;;
+    wc) src="$SRC_WC" ;;
+    oc) src="$SRC_OC" ;;
+    ps) src="$SRC_PS" ;;
     *) fail "неизвестная платформа: $p" ;;
   esac
 
@@ -97,13 +136,13 @@ for p in "${platforms[@]}"; do
 
   echo "==> Упаковка: $p (v$VERSION)"
   php_lint "$src"
-  check_platform "$p" "$src"
+  check_platform "$p"
 
-  dest="$DIST/$p"
-  mkdir -p "$dest"
-
-  make_zip "$src" "$dest/$fname" "$base"
-  echo "   -> $dest/$fname"
+  case "$p" in
+    wc) build_wc ;;
+    oc) build_oc ;;
+    ps) build_ps ;;
+  esac
 done
 
 echo "Готово. Артефакты в $DIST"
