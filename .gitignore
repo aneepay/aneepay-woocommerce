@@ -1,3 +1,6 @@
+# Packaged plugin artifacts (scripts/pack.sh output)
+/dist/
+
 # WordPress / WooCommerce runtime data (used by docker-compose bind mounts)
 /wp-content
 /docker/runtime/
@@ -12,6 +15,10 @@ Thumbs.db
 # PHP tooling
 /vendor/
 composer.lock
+.phpunit.result.cache
+.phpunit.cache/
+/.phpcs/
+.phpcs-cache
 
 # Logs
 *.log

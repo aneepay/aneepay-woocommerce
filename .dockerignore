@@ -1,6 +1,6 @@
 .git
-ROADMAP.md
-INTEGRATION.md
+docs
+dist
 docker/runtime
 vendor
 node_modules
