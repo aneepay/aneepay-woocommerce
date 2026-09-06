@@ -242,8 +242,60 @@ function aneepay_register_endpoints() {
 
 	add_action( 'wp_ajax_aneepay_check_status', 'aneepay_ajax_check_status' );
 	add_action( 'wp_ajax_nopriv_aneepay_check_status', 'aneepay_ajax_check_status' );
+
+	// Admin-only: test the AneePay connection from the gateway settings page.
+	add_action( 'wp_ajax_aneepay_check_connection', 'aneepay_ajax_check_connection' );
 }
 add_action( 'rest_api_init', 'aneepay_register_endpoints' );
+
+/**
+ * Admin AJAX: verify the AneePay connection (Account ID, domain, safe status).
+ *
+ * @return void
+ */
+function aneepay_ajax_check_connection() {
+	check_ajax_referer( 'aneepay_test_connection', 'nonce' );
+
+	if ( ! current_user_can( 'manage_woocommerce' ) ) {
+		wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'aneepay-crypto-gateway' ) ) );
+	}
+
+	$gateway = new WC_Gateway_AneePay_Crypto();
+	$result  = $gateway->api_handler->test_connection();
+
+	if ( ! empty( $result['ok'] ) ) {
+		wp_send_json_success( $result );
+	}
+
+	wp_send_json_error( $result );
+}
+
+/**
+ * Enqueue admin styles for the gateway settings page.
+ *
+ * @param string $hook_suffix Current admin page.
+ * @return void
+ */
+function aneepay_enqueue_admin_styles( $hook_suffix ) {
+	if ( false === strpos( $hook_suffix, 'wc-settings' ) ) {
+		return;
+	}
+
+	wp_register_style( 'aneepay-admin', false, array(), ANEEPAY_VERSION );
+	wp_add_inline_style(
+		'aneepay-admin',
+		'.aneepay-mode-badge{margin:8px 0;padding:8px 12px;background:#f6f7f7;border:1px solid #e0e0e0;border-radius:4px;font-size:13px;}' .
+		'.aneepay-mode-pill{display:inline-block;padding:1px 8px;border-radius:10px;color:#fff;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.02em;}' .
+		'.aneepay-mode-live .aneepay-mode-pill{background:#008a20;}' .
+		'.aneepay-mode-sandbox .aneepay-mode-pill{background:#c25600;}' .
+		'.aneepay-setup-card{margin:8px 0 16px;padding:12px 16px;background:#eef6fb;border:1px solid #c3ddd9;border-radius:6px;}' .
+		'.aneepay-setup-card ol{margin:6px 0 12px;padding-left:20px;}' .
+		'.aneepay-endpoint{display:inline-block;word-break:break-all;}' .
+		'.aneepay-test-connection{margin:8px 0 16px;padding:12px 16px;background:#f9f9f9;border:1px solid #ddd;border-radius:6px;}'
+	);
+	wp_enqueue_style( 'aneepay-admin' );
+}
+add_action( 'admin_enqueue_scripts', 'aneepay_enqueue_admin_styles' );
 
 /**
  * Register the success/fail query variable used by the store-side

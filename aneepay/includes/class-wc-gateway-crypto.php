@@ -280,8 +280,19 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 	 * @return void
 	 */
 	public function admin_options() {
-		$secret    = (string) $this->get_option( 'webhook_secret' );
+		$secret     = (string) $this->get_option( 'webhook_secret' );
 		$account_id = (string) $this->get_option( 'account_id' );
+
+		$webhook_url = rest_url( 'aneepay/v1/webhook' );
+		$success_url = home_url( '/?aneepay=success' );
+		$fail_url    = home_url( '/?aneepay=fail' );
+
+		// Mode badge (SANDBOX / LIVE + token + network) at the top.
+		$this->render_mode_badge();
+
+		if ( '' === $account_id || '' === $secret ) {
+			$this->render_quick_setup( $account_id, $secret, $webhook_url, $success_url, $fail_url );
+		}
 
 		if ( '' === $secret ) {
 			echo '<div class="notice notice-error"><p><strong>' . esc_html__( 'AneePay webhook secret is not set.', 'aneepay-crypto-gateway' ) . '</strong> ' . esc_html__( 'Payment confirmations cannot be verified and webhook calls will be rejected (HTTP 401). Copy the Webhook Secret from your AneePay account panel into the field below.', 'aneepay-crypto-gateway' ) . '</p></div>';
@@ -291,25 +302,162 @@ class WC_Gateway_AneePay_Crypto extends WC_Payment_Gateway {
 			echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'AneePay Account ID is not set.', 'aneepay-crypto-gateway' ) . '</strong> ' . esc_html__( 'Payments cannot be created until you enter your account UUID below.', 'aneepay-crypto-gateway' ) . '</p></div>';
 		}
 
+		$this->render_test_connection( $account_id );
+
 		parent::admin_options();
 
-		$webhook_url = rest_url( 'aneepay/v1/webhook' );
-		$success_url = home_url( '/?aneepay=success' );
-		$fail_url    = home_url( '/?aneepay=fail' );
+		$this->render_endpoints( $webhook_url, $success_url, $fail_url );
+	}
 
-		echo '<h2>' . esc_html__( 'AneePay Endpoints', 'aneepay-crypto-gateway' ) . '</h2>';
-		echo '<p>' . esc_html__( 'Configure these URLs in the AneePay account panel:', 'aneepay-crypto-gateway' ) . '</p>';
+	/**
+	 * Print the SANDBOX / LIVE badge with token and network.
+	 *
+	 * @return void
+	 */
+	protected function render_mode_badge() {
+		$sandbox  = 'yes' === $this->get_option( 'test_mode' );
+		$label    = $sandbox ? __( 'SANDBOX', 'aneepay-crypto-gateway' ) : __( 'LIVE', 'aneepay-crypto-gateway' );
+		$class    = $sandbox ? 'aneepay-mode-sandbox' : 'aneepay-mode-live';
+		$token    = strtoupper( $this->api_handler->get_token() );
+		$network  = $this->api_handler->get_network();
+		$mode     = $this->get_option( 'enabled' );
 
+		echo '<p class="aneepay-mode-badge ' . esc_attr( $class ) . '">';
+		echo '<span class="aneepay-mode-pill">' . esc_html( $label ) . '</span>';
+		echo ' &middot; ' . esc_html( $token ) . ' &middot; ' . esc_html( $network );
+		if ( ! $this->enabled ) {
+			echo ' &middot; <strong>' . esc_html__( 'disabled', 'aneepay-crypto-gateway' ) . '</strong>';
+		}
+		echo '</p>';
+	}
+
+	/**
+	 * Print the step-by-step quick-setup helper block.
+	 *
+	 * @param string $account_id Account ID value.
+	 * @param string $secret     Webhook secret value.
+	 * @param string $webhook_url STATUS_URL.
+	 * @param string $success_url SUCCESS_URL.
+	 * @param string $fail_url    FAIL_URL.
+	 * @return void
+	 */
+	protected function render_quick_setup( $account_id, $secret, $webhook_url, $success_url, $fail_url ) {
+		echo '<div class="aneepay-setup-card">';
+		echo '<h3>' . esc_html__( 'Quick setup', 'aneepay-crypto-gateway' ) . '</h3>';
+		echo '<ol>';
+		echo '<li>' . esc_html__( 'Create or open your account in the AneePay dashboard.', 'aneepay-crypto-gateway' ) . '</li>';
+		echo '<li>' . esc_html__( 'Set your wallet address, domain and the three URLs below in the account panel.', 'aneepay-crypto-gateway' ) . '</li>';
+		echo '<li>' . esc_html__( 'Copy the Account ID and Webhook Secret into the fields below.', 'aneepay-crypto-gateway' ) . '</li>';
+		echo '<li>' . esc_html__( 'Save the settings and press "Test connection".', 'aneepay-crypto-gateway' ) . '</li>';
+		echo '</ol>';
+
+		echo '<p><strong>' . esc_html__( 'Set these URLs in the AneePay account panel:', 'aneepay-crypto-gateway' ) . '</strong></p>';
 		echo '<p><strong>' . esc_html__( 'STATUS_URL (webhook)', 'aneepay-crypto-gateway' ) . '</strong><br><code>' . esc_url( $webhook_url ) . '</code></p>';
-		echo '<p>' . esc_html__( 'AneePay pushes the transaction result here to keep order statuses in sync.', 'aneepay-crypto-gateway' ) . '</p>';
-
 		echo '<p><strong>' . esc_html__( 'SUCCESS_URL', 'aneepay-crypto-gateway' ) . '</strong><br><code>' . esc_url( $success_url ) . '</code></p>';
-		echo '<p>' . esc_html__( 'Customers land here after a successful payment.', 'aneepay-crypto-gateway' ) . '</p>';
-
 		echo '<p><strong>' . esc_html__( 'FAIL_URL', 'aneepay-crypto-gateway' ) . '</strong><br><code>' . esc_url( $fail_url ) . '</code></p>';
-		echo '<p>' . esc_html__( 'Customers land here when the payment is cancelled or fails.', 'aneepay-crypto-gateway' ) . '</p>';
+		echo '</div>';
+	}
 
-		echo '<p>' . esc_html__( 'As a fallback the plugin also polls the payment status periodically.', 'aneepay-crypto-gateway' ) . '</p>';
+	/**
+	 * Print the "Test connection" button and the endpoints block.
+	 *
+	 * @param string $account_id Account ID value.
+	 * @return void
+	 */
+	protected function render_test_connection( $account_id ) {
+		$nonce  = wp_create_nonce( 'aneepay_test_connection' );
+		$has_id = '' !== $account_id;
+
+		echo '<div class="aneepay-test-connection">';
+		echo '<button type="button" id="aneepay-test-connection" class="button" data-nonce="' . esc_attr( $nonce ) . '" ' . ( $has_id ? '' : 'disabled' ) . '>' . esc_html__( 'Test connection', 'aneepay-crypto-gateway' ) . '</button>';
+		echo ' <span id="aneepay-test-result" style="margin-left:8px;"></span>';
+		echo '</div>';
+		?>
+		<script type="text/javascript">
+		(function () {
+			'use strict';
+			var btn = document.getElementById('aneepay-test-connection');
+			var out = document.getElementById('aneepay-test-result');
+			if (!btn) { return; }
+			btn.addEventListener('click', function () {
+				btn.disabled = true;
+				out.textContent = '<?php echo esc_js( __( 'Checking...', 'aneepay-crypto-gateway' ) ); ?>';
+				var body = new URLSearchParams();
+				body.append('action', 'aneepay_check_connection');
+				body.append('nonce', btn.getAttribute('data-nonce'));
+				fetch(ajaxurl, { method: 'POST', credentials: 'same-origin', body: body })
+					.then(function (r) { return r.json(); })
+					.then(function (d) {
+						btn.disabled = false;
+						if (d && d.success) {
+							out.textContent = (d.data && d.data.message) || 'OK';
+							out.style.color = 'green';
+						} else {
+							var m = (d && d.data && d.data.message) || 'Connection failed';
+							out.textContent = m;
+							out.style.color = 'red';
+						}
+					})
+					.catch(function (e) {
+						btn.disabled = false;
+						out.textContent = 'Connection failed';
+						out.style.color = 'red';
+					});
+			});
+		})();
+		</script>
+		<?php
+	}
+
+	/**
+	 * Print the AneePay endpoints block (STATUS / SUCCESS / FAIL URLs).
+	 *
+	 * @param string $webhook_url STATUS_URL.
+	 * @param string $success_url SUCCESS_URL.
+	 * @param string $fail_url    FAIL_URL.
+	 * @return void
+	 */
+	protected function render_endpoints( $webhook_url, $success_url, $fail_url ) {
+		$this->render_endpoint_row( __( 'STATUS_URL (webhook)', 'aneepay-crypto-gateway' ), $webhook_url, __( 'AneePay pushes the transaction result here to keep order statuses in sync.', 'aneepay-crypto-gateway' ) );
+		$this->render_endpoint_row( __( 'SUCCESS_URL', 'aneepay-crypto-gateway' ), $success_url, __( 'Customers land here after a successful payment.', 'aneepay-crypto-gateway' ) );
+		$this->render_endpoint_row( __( 'FAIL_URL', 'aneepay-crypto-gateway' ), $fail_url, __( 'Customers land here when the payment is cancelled or fails.', 'aneepay-crypto-gateway' ) );
+
+		?>
+		<script type="text/javascript">
+		(function () {
+			'use strict';
+			document.querySelectorAll('.aneepay-copy').forEach(function (btn) {
+				btn.addEventListener('click', function () {
+					var code = btn.closest('p') && btn.closest('p').querySelector('.aneepay-endpoint');
+					if (!code) { return; }
+					var text = code.getAttribute('data-url');
+					if (navigator.clipboard && navigator.clipboard.writeText) {
+						navigator.clipboard.writeText(text);
+					}
+					btn.textContent = '<?php echo esc_js( __( 'Copied', 'aneepay-crypto-gateway' ) ); ?>';
+					setTimeout(function () { btn.textContent = '<?php echo esc_js( __( 'Copy', 'aneepay-crypto-gateway' ) ); ?>'; }, 1500);
+				});
+			});
+		})();
+		</script>
+		<?php
+	}
+
+	/**
+	 * Print a single endpoint row with a copy button.
+	 *
+	 * @param string $label Label.
+	 * @param string $url   URL.
+	 * @param string $desc  Description.
+	 * @return void
+	 */
+	protected function render_endpoint_row( $label, $url, $desc ) {
+		echo '<p>';
+		echo '<strong>' . esc_html( $label ) . '</strong><br>';
+		echo '<code class="aneepay-endpoint" data-url="' . esc_attr( $url ) . '">' . esc_html( $url ) . '</code>';
+		echo ' <button type="button" class="button button-small aneepay-copy">' . esc_html__( 'Copy', 'aneepay-crypto-gateway' ) . '</button>';
+		echo '<br><span class="description">' . esc_html( $desc ) . '</span>';
+		echo '</p>';
 	}
 
 	/**

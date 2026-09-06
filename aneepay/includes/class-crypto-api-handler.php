@@ -348,4 +348,65 @@ class AneePay_Crypto_API_Handler {
 
 		return $data;
 	}
+
+	/**
+	 * Validate the merchant connection (Account ID, domain, safe status).
+	 *
+	 * Calls the account payments list endpoint, which the server-side checks
+	 * (account exists, Origin domain matches, is_safe) without creating a
+	 * payment. Used by the "Test connection" button.
+	 *
+	 * @return array{ok:bool, code:int, message:string, error_code?:string}
+	 */
+	public function test_connection() {
+		$account_id = $this->get_account_id();
+
+		if ( '' === $account_id ) {
+			return array(
+				'ok'      => false,
+				'code'    => 0,
+				'message' => __( 'Account ID is not set.', 'aneepay-crypto-gateway' ),
+			);
+		}
+
+		$url  = $this->api_url( 'accounts/' . rawurlencode( $account_id ) . '/payments' );
+		$args = $this->request_args();
+
+		$this->log( 'test_connection', 'GET ' . $url );
+
+		$response = wp_remote_get( $url, $args );
+
+		if ( is_wp_error( $response ) ) {
+			$this->log( 'test_connection', $response->get_error_message(), 'error' );
+
+			return array(
+				'ok'      => false,
+				'code'    => 0,
+				'message' => $response->get_error_message(),
+			);
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$body = wp_remote_retrieve_body( $response );
+
+		if ( 200 === $code ) {
+			return array(
+				'ok'      => true,
+				'code'    => 200,
+				'message' => __( 'Connection OK. Account exists and the domain matches.', 'aneepay-crypto-gateway' ),
+			);
+		}
+
+		$data       = json_decode( (string) $body, true );
+		$error_code = is_array( $data ) && ! empty( $data['code'] ) ? sanitize_text_field( (string) $data['code'] ) : '';
+
+		$this->log( 'test_connection', 'HTTP ' . $code . ' body: ' . $body, 'error' );
+
+		return array(
+			'ok'         => false,
+			'code'       => $code,
+			'error_code' => $error_code,
+			'message'    => $this->extract_error_message( $code, $body ),
+		);
+	}
 }
