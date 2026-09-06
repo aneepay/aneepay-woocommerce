@@ -11,6 +11,6 @@ folder can be packaged into its own artifact and released independently.
 
 Shared materials:
 
-- `INTEGRATION.md` — the single source of truth for the AneePay API.
+- `docs/INTEGRATION.md` — the single source of truth for the AneePay API.
 - `docs/ROADMAP*.md` — per-platform plans.
 - `VERSION` — the shared release version (overridable by a flag or tag).

@@ -6,7 +6,8 @@ packaged into a separate artifact.
 
 - **AneePay** — a non-custodial crypto payment system with a 0.5% fee, no KYC,
   hosted checkout, HMAC-SHA256-signed webhooks, and a sandbox (Amoy).
-- API documentation and the payment model are in [`INTEGRATION.md`](INTEGRATION.md).
+- API documentation and the payment model are in
+  [`docs/INTEGRATION.md`](docs/INTEGRATION.md) (not tracked in git).
 
 ## Plugins
 
@@ -47,9 +48,8 @@ way as they are implemented (see `docs/ROADMAP-*.md`).
 
 ```
 .
-├── INTEGRATION.md                     # AneePay API (single source of truth)
 ├── VERSION                            # shared release version
-├── docs/                              # ROADMAP per platform
+├── docs/                              # INTEGRATION.md + ROADMAPs (local, not tracked)
 ├── plugins/
 │   ├── woocommerce/aneepay/           # WC plugin (PHP)
 │   ├── opencart/aneepay/              # OC extension (skeleton)
@@ -59,6 +59,6 @@ way as they are implemented (see `docs/ROADMAP-*.md`).
 └── .github/workflows/release.yml      # CI: lint + package + release
 ```
 
-> When working from [`INTEGRATION.md`](INTEGRATION.md), see §8 (the recipe for
+> When working from [`docs/INTEGRATION.md`](docs/INTEGRATION.md), see §8 (the recipe for
 > creating plugins for any CMS) — it is the common foundation for all three
 > platforms.

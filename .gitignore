@@ -22,3 +22,6 @@ composer.lock
 
 # Logs
 *.log
+
+# Local docs (INTEGRATION.md + ROADMAPs) — not part of the repo
+/docs
