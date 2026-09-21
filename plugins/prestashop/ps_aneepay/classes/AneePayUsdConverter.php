@@ -72,6 +72,49 @@ class AneePayUsdConverter {
 	}
 
 	/**
+	 * Resolve a rate WITHOUT making a network request (used for the admin
+	 * preview). Checks the cached automatic rate, then the store rate, then
+	 * the manual fallback.
+	 *
+	 * @param string $currency Currency code.
+	 * @param string $source   (out) auto|store|manual.
+	 * @return float|null
+	 */
+	public function peek_fiat_per_usd($currency, &$source) {
+		$currency = strtoupper(trim((string) $currency));
+
+		if ('USD' === $currency) {
+			$source = 'auto';
+			return 1.0;
+		}
+
+		if ($this->is_auto_enabled()) {
+			$rate = $this->read_cached_rate($currency);
+
+			if (null !== $rate) {
+				$source = 'auto';
+				return $rate;
+			}
+		}
+
+		$store = (float) $this->client->get('store_rate', 0);
+
+		if ($store > 0) {
+			$source = 'store';
+			return $store;
+		}
+
+		$manual = $this->get_manual_rate();
+
+		if (null !== $manual && $manual > 0) {
+			$source = 'manual';
+			return $manual;
+		}
+
+		return null;
+	}
+
+	/**
 	 * Convert a store-total into the token amount.
 	 *
 	 * @param float|string $store_total Order total in the store currency.
@@ -112,14 +155,10 @@ class AneePayUsdConverter {
 	 * @return float|null
 	 */
 	protected function fetch_auto_rate($currency) {
-		$cache_file = _PS_CACHE_DIR_ . 'aneepay_rate_' . strtolower($currency) . '.json';
+		$cached = $this->read_cached_rate($currency);
 
-		if (is_file($cache_file)) {
-			$cached = json_decode((string) file_get_contents($cache_file), true);
-
-			if (is_array($cached) && isset($cached['rate']) && (float) $cached['rate'] > 0) {
-				return (float) $cached['rate'];
-			}
+		if (null !== $cached) {
+			return $cached;
 		}
 
 		$url = 'https://api.frankfurter.app/latest?from=USD&to=' . rawurlencode($currency);
@@ -147,8 +186,40 @@ class AneePayUsdConverter {
 			return null;
 		}
 
-		@file_put_contents($cache_file, json_encode(array('rate' => $rate, 'time' => time())));
+		file_put_contents($this->cache_file($currency), json_encode(array('rate' => $rate, 'time' => time())));
 
 		return $rate;
+	}
+
+	/**
+	 * Read the cached Frankfurter/ECB rate without touching the network.
+	 *
+	 * @param string $currency Currency code.
+	 * @return float|null
+	 */
+	protected function read_cached_rate($currency) {
+		$cache_file = $this->cache_file($currency);
+
+		if (!is_file($cache_file)) {
+			return null;
+		}
+
+		$cached = json_decode((string) file_get_contents($cache_file), true);
+
+		if (is_array($cached) && isset($cached['rate']) && (float) $cached['rate'] > 0) {
+			return (float) $cached['rate'];
+		}
+
+		return null;
+	}
+
+	/**
+	 * Cache file path for a currency rate.
+	 *
+	 * @param string $currency Currency code.
+	 * @return string
+	 */
+	protected function cache_file($currency) {
+		return _PS_CACHE_DIR_ . 'aneepay_rate_' . strtolower((string) $currency) . '.json';
 	}
 }

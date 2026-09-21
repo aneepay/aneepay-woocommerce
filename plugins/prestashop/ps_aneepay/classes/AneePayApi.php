@@ -165,6 +165,59 @@ class AneePayApi {
 	}
 
 	/**
+	 * Read the most recent request-log entries (newest first).
+	 *
+	 * @param int $limit Maximum number of rows.
+	 * @return array<int, array{time:string, method:string, endpoint:string, code:int, latency:int, body:string}>
+	 */
+	public function get_request_log($limit = 50) {
+		if (!$this->db || !method_exists($this->db, 'executeS')) {
+			return array();
+		}
+
+		$limit = max(1, (int) $limit);
+
+		$rows = $this->db->executeS(
+			'SELECT `message`, `date_added` FROM `' . _DB_PREFIX_ . 'aneepay_log`
+			 WHERE `context` = \'request\' ORDER BY `log_id` DESC LIMIT ' . $limit
+		);
+
+		$logs = array();
+
+		foreach ((array) $rows as $row) {
+			$data = $this->json((string) $row['message']);
+
+			if (!is_array($data)) {
+				continue;
+			}
+
+			$logs[] = array(
+				'time'     => (string) $row['date_added'],
+				'method'   => isset($data['method']) ? (string) $data['method'] : '',
+				'endpoint' => isset($data['endpoint']) ? (string) $data['endpoint'] : '',
+				'code'     => isset($data['code']) ? (int) $data['code'] : 0,
+				'latency'  => isset($data['latency']) ? (int) $data['latency'] : 0,
+				'body'     => isset($data['body']) ? (string) $data['body'] : '',
+			);
+		}
+
+		return $logs;
+	}
+
+	/**
+	 * Delete the request-log entries.
+	 *
+	 * @return bool
+	 */
+	public function clear_request_log() {
+		if (!$this->db || !method_exists($this->db, 'delete')) {
+			return false;
+		}
+
+		return (bool) $this->db->delete('aneepay_log', 'context = \'request\'');
+	}
+
+	/**
 	 * Verify the HMAC-SHA256 signature of an incoming webhook (fail-closed).
 	 *
 	 * @param string $body      Raw request body.

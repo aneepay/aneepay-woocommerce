@@ -36,6 +36,9 @@ ps_aneepay/
 - Setup: Modules → Module manager → AneePay → Configure. Enter the Account ID +
   Webhook Secret. Save. Order states are configurable (defaults: pending =
   "Awaiting payment", paid = "Payment accepted", failed/cancelled accordingly).
+- The settings page adds a SANDBOX/LIVE badge, a "Test connection" button
+  (`GET /accounts/{id}/payments`), an offline conversion preview, a request log
+  panel (`ps_aneepay_log`) and the copyable STATUS/SUCCESS/FAIL/cron URLs.
 - Amount semantics: token amount = store total converted via Frankfurter/ECB
   (auto) + store `Currency` rate fallback + manual rate; rounded **up** (ceil).
 - Order metadata is stored in the `ps_aneepay_order` table; the webhook resolves
