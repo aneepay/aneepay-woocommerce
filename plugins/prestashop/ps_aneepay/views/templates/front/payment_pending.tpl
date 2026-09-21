@@ -13,6 +13,11 @@
 .aneepay-pending-info{color:#555;margin:12px 0 20px;}
 .aneepay-pending-actions{margin:16px 0;}
 .aneepay-pending-actions .btn{display:inline-block;margin:4px;}
+.aneepay-pending-confirm{margin:12px auto;max-width:420px;text-align:left;font-size:13px;color:#555;}
+.aneepay-pending-confirm label{display:flex;gap:8px;align-items:flex-start;cursor:pointer;}
+.aneepay-pending-confirm input{margin-top:2px;flex:0 0 auto;}
+.aneepay-pending-confirm.aneepay-confirm-error label span{color:#c0392b;}
+.aneepay-pending-confirm.aneepay-confirm-error input{outline:2px solid #c0392b;outline-offset:2px;}
 </style>{/literal}
 <div class="aneepay-pending">
 	<div class="aneepay-pending-card">
@@ -31,8 +36,15 @@
 
 		<p class="aneepay-pending-info">{l s='Payments are non-custodial: the funds go directly from your wallet to the merchant, minus a fixed 0.5% fee. No account or KYC is required.' mod='ps_aneepay'}</p>
 
+		<div class="aneepay-pending-confirm" id="aneepay-confirm-wrap">
+			<label for="aneepay-confirm">
+				<input type="checkbox" id="aneepay-confirm" autocomplete="off">
+				<span>{l s='I understand that I will be redirected to AneePay\'s secure payment page.' mod='ps_aneepay'}</span>
+			</label>
+		</div>
+
 		<div class="aneepay-pending-actions">
-			<a href="{$checkout_url}" target="_blank" rel="noopener" class="btn btn-primary btn-lg">{l s='Pay now' mod='ps_aneepay'}</a>
+			<a href="{$checkout_url}" target="_blank" rel="noopener" class="btn btn-primary btn-lg" id="aneepay-pay-now">{l s='Pay now' mod='ps_aneepay'}</a>
 			<button type="button" class="btn btn-default" id="aneepay-i-paid">{l s='I already paid' mod='ps_aneepay'}</button>
 		</div>
 
@@ -49,6 +61,9 @@
 	var orderId = {$order_id};
 	var attempts = 0;
 	var btn = document.getElementById('aneepay-i-paid');
+	var payBtn = document.getElementById('aneepay-pay-now');
+	var confirmBox = document.getElementById('aneepay-confirm');
+	var confirmWrap = document.getElementById('aneepay-confirm-wrap');
 	var interval;
 
 	function redirect(status) {
@@ -86,6 +101,19 @@
 			e.preventDefault();
 			btn.textContent = '{l s='Checking…' mod='ps_aneepay'}';
 			poll();
+		});
+	}
+
+	if (payBtn && confirmBox && confirmWrap) {
+		payBtn.addEventListener('click', function (e) {
+			if (!confirmBox.checked) {
+				e.preventDefault();
+				confirmWrap.classList.add('aneepay-confirm-error');
+				confirmBox.focus();
+			}
+		});
+		confirmBox.addEventListener('change', function () {
+			confirmWrap.classList.remove('aneepay-confirm-error');
 		});
 	}
 
