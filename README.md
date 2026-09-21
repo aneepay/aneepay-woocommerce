@@ -1,4 +1,4 @@
-# AneePay CMS Integrations — Monorepo
+# AneePay CMS Integrations
 
 AneePay plugins (crypto payments for USDT/USDC/DAI on Polygon + Amoy) for three
 platforms in a single repository. Each plugin lives in its own folder and is
@@ -11,11 +11,11 @@ packaged into a separate artifact.
 
 ## Plugins
 
-| Platform | Folder | Build | Artifact | Roadmap |
-| --------- | ------ | ----- | -------- | ------- |
-| WooCommerce | [`plugins/woocommerce/aneepay`](plugins/woocommerce/aneepay) | `./scripts/pack.sh wc` | `dist/wc/aneepay.zip` | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
-| OpenCart 3.x | [`plugins/opencart/aneepay`](plugins/opencart/aneepay) | `./scripts/pack.sh oc` | `dist/oc/aneepay-<ver>.ocmod.zip` | [`docs/ROADMAP-OPENCART.md`](docs/ROADMAP-OPENCART.md) |
-| PrestaShop 1.7/8 | [`plugins/prestashop/ps_aneepay`](plugins/prestashop/ps_aneepay) | `./scripts/pack.sh ps` | `dist/ps/ps_aneepay.zip` | [`docs/ROADMAP-PRESTASHOP.md`](docs/ROADMAP-PRESTASHOP.md) |
+| Platform         | Folder                                                           | Build                  | Artifact                          | Roadmap                                                    |
+| ---------------- | ---------------------------------------------------------------- | ---------------------- | --------------------------------- | ---------------------------------------------------------- |
+| WooCommerce      | [`plugins/woocommerce/aneepay`](plugins/woocommerce/aneepay)     | `./scripts/pack.sh wc` | `dist/wc/aneepay.zip`             | [`docs/ROADMAP.md`](docs/ROADMAP.md)                       |
+| OpenCart 3.x     | [`plugins/opencart/aneepay`](plugins/opencart/aneepay)           | `./scripts/pack.sh oc` | `dist/oc/aneepay-<ver>.ocmod.zip` | [`docs/ROADMAP-OPENCART.md`](docs/ROADMAP-OPENCART.md)     |
+| PrestaShop 1.7/8 | [`plugins/prestashop/ps_aneepay`](plugins/prestashop/ps_aneepay) | `./scripts/pack.sh ps` | `dist/ps/ps_aneepay.zip`          | [`docs/ROADMAP-PRESTASHOP.md`](docs/ROADMAP-PRESTASHOP.md) |
 
 Status: WooCommerce is a working implementation; OpenCart and PrestaShop are
 skeletons (structure per the matching ROADMAP, implementation not started).

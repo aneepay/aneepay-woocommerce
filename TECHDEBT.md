@@ -7,12 +7,12 @@ now; this note records what must be extracted later.
 
 The platform-agnostic logic is duplicated across plugins:
 
-| Logic | WooCommerce | OpenCart | PrestaShop |
-| ----- | ----------- | -------- | ---------- |
-| API client (create/get_payment, request, errors) | `plugins/woocommerce/aneepay/includes/class-crypto-api-handler.php` | `plugins/opencart/aneepay/system/library/aneepay/aneepay.php` | (not yet) |
-| Fiat→USD→token conversion | `class-usd-converter.php` | `usd-converter.php` | (not yet) |
-| Webhook HMAC-SHA256 verify | `aneepay_verify_webhook_signature()` | `AneePay_Client::verify_signature()` | (not yet) |
-| `operation_id`→UUID (128-bit) | `aneepay_operation_id_to_uuid()` | `AneePay_Client::operation_id_to_uuid()` | (not yet) |
+| Logic                                            | WooCommerce                                                         | OpenCart                                                      | PrestaShop |
+| ------------------------------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------- | ---------- |
+| API client (create/get_payment, request, errors) | `plugins/woocommerce/aneepay/includes/class-crypto-api-handler.php` | `plugins/opencart/aneepay/system/library/aneepay/aneepay.php` | (not yet)  |
+| Fiat→USD→token conversion                        | `class-usd-converter.php`                                           | `usd-converter.php`                                           | (not yet)  |
+| Webhook HMAC-SHA256 verify                       | `aneepay_verify_webhook_signature()`                                | `AneePay_Client::verify_signature()`                          | (not yet)  |
+| `operation_id`→UUID (128-bit)                    | `aneepay_operation_id_to_uuid()`                                    | `AneePay_Client::operation_id_to_uuid()`                      | (not yet)  |
 
 Only the "pure logic" (conversion math, signature, operation_id) can be shared.
 The CMS glue (order, HTTP, currency, settings, cron, templates) **must** remain
