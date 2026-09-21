@@ -10,14 +10,17 @@ class Ps_AneepayCronModuleFrontController extends ModuleFrontController {
 			$this->respond(500, array('success' => false, 'message' => 'module not loaded'));
 		}
 
-		// No-overlap guard.
-		$lock = 'aneepay_cron_lock';
+		// No-overlap guard. A lock older than 10 minutes is considered stale
+		// (a previous run crashed) and is taken over.
+		$lock = _PS_CACHE_DIR_ . 'aneepay_cron_lock';
 
-		if (file_exists(_PS_CACHE_DIR_ . $lock)) {
+		if (file_exists($lock) && (time() - (int) file_get_contents($lock)) < 600) {
 			$this->respond(200, array('success' => false, 'message' => 'locked'));
 		}
 
-		@file_put_contents(_PS_CACHE_DIR_ . $lock, (string) time());
+		file_put_contents($lock, (string) time());
+
+		$payload = array('success' => true, 'processed' => 0);
 
 		try {
 			$api       = $module->getApi();
@@ -42,12 +45,18 @@ class Ps_AneepayCronModuleFrontController extends ModuleFrontController {
 				}
 			}
 
-			$this->respond(200, array('success' => true, 'processed' => $processed));
+			$payload['processed'] = $processed;
 		} catch (Exception $e) {
-			$this->respond(200, array('success' => false, 'message' => $e->getMessage()));
-		} finally {
-			@unlink(_PS_CACHE_DIR_ . $lock);
+			$payload = array('success' => false, 'message' => $e->getMessage());
 		}
+
+		// Release the lock before responding: respond() exits the script, so a
+		// finally block would never run.
+		if (file_exists($lock)) {
+			unlink($lock);
+		}
+
+		$this->respond(200, $payload);
 	}
 
 	protected function respond($code, $data) {

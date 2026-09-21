@@ -2,10 +2,11 @@
 
 Auto-installs PrestaShop 8.1 (official image) + the AneePay module.
 
-> Status: **WIP.** The shop installs, the module is installed + enabled, its
-> `paymentOptions` hook and the `aneepay_*` tables are created. The module's
-> front controllers (`webhook`/`success`/`fail`/`cron`) currently return 404 —
-> the prestatop front-controller routing still needs to be resolved.
+> Status: **working stand.** The shop installs, the module is installed +
+> enabled, its `paymentOptions` hook and the `aneepay_*` tables are created, and
+> the module front controllers (`webhook`/`success`/`fail`/`cron`/`check`/
+> `payment`) route correctly. The module still lacks the admin extras and the
+> buyer "waiting" screen (see `docs/ROADMAP-PRESTASHOP.md`).
 
 ## Run
 
@@ -38,3 +39,8 @@ Known quirks hit while getting this working:
 - Admin password must be ≥ 8 chars.
 - `Module::install()` from a bare CLI fatal (`Language` context) — hence the
   DB-direct `enable_ps.php`.
+- Module front controllers 404 unless the module is associated with the shop in
+  `ps_module_shop` (the Dispatcher treats it as inactive otherwise) — the stand
+  now inserts this association.
+- The image's CLI PHP has no `mysqli` (only `pdo_mysql`) — the wait loop uses
+  PDO.

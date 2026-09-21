@@ -72,6 +72,15 @@ if ($hook_id && $mod_id) {
 	}
 }
 
+// Associate the module with the shop(s). Without this the Dispatcher sees
+// $module->active = 0 and every module front controller returns 404.
+if ($mod_id) {
+	$db->execute(
+		'INSERT IGNORE INTO `' . _DB_PREFIX_ . 'module_shop` (`id_module`, `id_shop`, `enable_device`)
+		 SELECT ' . (int) $mod_id . ', `id_shop`, 7 FROM `' . _DB_PREFIX_ . 'shop`'
+	);
+}
+
 // Config defaults.
 $defaults = array(
 	'ANEEPAY_ACCOUNT_ID'      => '',

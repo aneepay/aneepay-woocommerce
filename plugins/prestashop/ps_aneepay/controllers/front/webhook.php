@@ -14,7 +14,7 @@ class Ps_AneepayWebhookModuleFrontController extends ModuleFrontController {
 		$api = $module->getApi();
 
 		$body      = (string) Tools::file_get_contents('php://input');
-		$signature = isset($_SERVER['HTTP_X_ANEELPAY_SIGNATURE']) ? (string) $_SERVER['HTTP_X_ANEELPAY_SIGNATURE'] : '';
+		$signature = isset($_SERVER['HTTP_X_ANEEPAY_SIGNATURE']) ? (string) $_SERVER['HTTP_X_ANEEPAY_SIGNATURE'] : '';
 
 		if (!$api->verify_signature($body, $signature)) {
 			$this->respond(401, array('success' => false));

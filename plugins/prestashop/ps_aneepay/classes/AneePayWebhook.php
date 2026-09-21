@@ -109,7 +109,17 @@ class AneePayWebhook {
 		$state_id = isset($this->state_map[$status]) ? (int) $this->state_map[$status] : 0;
 
 		if ($state_id > 0) {
-			$order             = new Order($id_order);
+			$order = new Order($id_order);
+
+			// Webhook/cron/check run without the front-office bootstrap that
+			// normally populates Context::$currency; changeIdOrderState() needs
+			// it when it generates the invoice (computing precision).
+			$context = Context::getContext();
+
+			if (Validate::isLoadedObject($order) && !Validate::isLoadedObject($context->currency)) {
+				$context->currency = new Currency((int) $order->id_currency);
+			}
+
 			$history           = new OrderHistory();
 			$history->id_order = (int) $order->id;
 

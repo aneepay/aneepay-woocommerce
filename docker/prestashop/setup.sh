@@ -6,7 +6,7 @@ set -e
 
 echo "Waiting for the PrestaShop auto-install ..."
 for i in $(seq 1 120); do
-	if php -r '$m=@mysqli_connect("db","ps","ps","prestashop"); $r=@mysqli_query($m,"SHOW TABLES LIKE \"ps_lang\""); exit($r && mysqli_num_rows($r) ? 0 : 1);' 2>/dev/null; then
+	if php -r 'try { $p = new PDO("mysql:host=db;dbname=prestashop", "ps", "ps"); } catch (Exception $e) { exit(1); } $r = $p->query("SHOW TABLES LIKE \"ps_lang\""); exit($r && $r->fetch() ? 0 : 1);' 2>/dev/null; then
 		break
 	fi
 	sleep 2
