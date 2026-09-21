@@ -48,7 +48,7 @@ class AneePayOrder {
 	/** @return array|null */
 	public function getByCart($id_cart) {
 		$db  = Db::getInstance();
-		$row = $db->getRow('SELECT * FROM `' . _DB_PREFIX_ . self::TABLE . '` WHERE `id_cart` = ' . (int) $id_cart . ' LIMIT 1');
+		$row = $db->getRow('SELECT * FROM `' . _DB_PREFIX_ . self::TABLE . '` WHERE `id_cart` = ' . (int) $id_cart);
 
 		return $row ? $row : null;
 	}

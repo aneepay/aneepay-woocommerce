@@ -28,16 +28,20 @@ class Ps_AneepayCheckModuleFrontController extends ModuleFrontController {
 			$this->respond(200, array('status' => (string) $row['payment_status']));
 		}
 
-		$data = $api->get_payment((string) $row['payment_id']);
+		try {
+			$data = $api->get_payment((string) $row['payment_id']);
 
-		if (null === $data || empty($data['status'])) {
-			$this->respond(200, array('status' => (string) $row['payment_status']));
+			if (null === $data || empty($data['status'])) {
+				$this->respond(200, array('status' => (string) $row['payment_status']));
+			}
+
+			$webhook = new AneePayWebhook($api, $order_model, $module->getStateMap());
+			$webhook->apply((int) $order_id, (string) $data['status']);
+
+			$this->respond(200, array('status' => (string) $data['status']));
+		} catch (Exception $e) {
+			$this->respond(200, array('status' => 'pending'));
 		}
-
-		$webhook = new AneePayWebhook($api, $order_model, $module->getStateMap());
-		$webhook->apply((int) $order_id, (string) $data['status']);
-
-		$this->respond(200, array('status' => (string) $data['status']));
 	}
 
 	protected function respond($code, $data) {

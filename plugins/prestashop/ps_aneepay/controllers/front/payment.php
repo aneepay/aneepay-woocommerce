@@ -1,7 +1,7 @@
 <?php
 /**
  * Payment entry point: validates the cart into an order, creates the AneePay
- * payment and redirects the buyer to the hosted checkout.
+ * payment and shows the pending screen with the hosted-checkout link.
  */
 class Ps_AneepayPaymentModuleFrontController extends ModuleFrontController {
 	public $ssl = true;
@@ -22,11 +22,12 @@ class Ps_AneepayPaymentModuleFrontController extends ModuleFrontController {
 
 		// Idempotency gate: reuse an existing pending hosted payment.
 		$existing = $order_model->getByCart((int) $cart->id);
-
 		if ($existing && !empty($existing['checkout_url']) && in_array((string) $existing['payment_status'], array('', 'pending'), true)) {
 			$this->context->cookie->__set('aneepay_order_id', (int) $existing['id_order'], time() + 3600);
 
-			Tools::redirect((string) $existing['checkout_url']);
+			$this->renderPending($existing);
+
+			return;
 		}
 
 		$total    = (float) $cart->getOrderTotal(true, Cart::BOTH);
@@ -44,7 +45,6 @@ class Ps_AneepayPaymentModuleFrontController extends ModuleFrontController {
 			$converted = $converter->convert($total, (string) $currency->iso_code);
 			$created   = $api->create_payment($converted['token_amount'], 'Order #' . (int) $cart->id);
 		} catch (Exception $e) {
-			$this->errors[] = $e->getMessage();
 			$this->redirectWithNotice($home, 'error', $e->getMessage());
 
 			return;
@@ -67,7 +67,7 @@ class Ps_AneepayPaymentModuleFrontController extends ModuleFrontController {
 
 		$id_order = (int) $this->module->currentOrder;
 
-		$order_model->saveMapping($id_order, array(
+		$mapping = array(
 			'id_cart'        => (int) $cart->id,
 			'payment_id'     => $created['payment_id'],
 			'operation_id'   => $created['operation_id'],
@@ -82,11 +82,32 @@ class Ps_AneepayPaymentModuleFrontController extends ModuleFrontController {
 			'usd_amount'     => number_format((float) $converted['usd_amount'], 2, '.', ''),
 			'fiat_per_usd'   => (string) $converted['fiat_per_usd'],
 			'rate_source'    => (string) $converted['source'],
-		));
+		);
+
+		$order_model->saveMapping($id_order, $mapping);
 
 		$this->context->cookie->__set('aneepay_order_id', $id_order, time() + 3600);
 
-		Tools::redirect((string) $created['checkout_url']);
+		$this->renderPending(array_merge(array('id_order' => $id_order), $mapping));
+	}
+
+	protected function renderPending($row) {
+		$this->context->smarty->assign(array(
+			'order_id'     => (int) $row['id_order'],
+			'payment_id'   => (string) $row['payment_id'],
+			'token'        => strtoupper((string) $row['token']),
+			'token_amount' => (string) $row['token_amount'],
+			'pay_now'      => trim((string) $row['token_amount']) . ' ' . strtoupper((string) $row['token']),
+			'checkout_url' => (string) $row['checkout_url'],
+			'network'      => (string) $row['network'],
+			'sandbox'      => (bool) $row['sandbox'],
+			'check_url'    => $this->module->moduleLink('check'),
+			'success_url'  => $this->module->moduleLink('success'),
+			'fail_url'     => $this->module->moduleLink('fail'),
+			'shop_url'     => $this->context->link->getPageLink('index'),
+		));
+
+		$this->setTemplate('module:ps_aneepay/views/templates/front/payment_pending.tpl');
 	}
 
 	protected function redirectWithNotice($url, $type, $message) {

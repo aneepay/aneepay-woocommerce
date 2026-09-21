@@ -743,6 +743,7 @@ class Ps_Aneepay extends PaymentModule {
 				$data['token']        = strtoupper((string) $row['token']);
 				$data['payment_id']   = (string) $row['payment_id'];
 				$data['checkout_url'] = (string) $row['checkout_url'];
+				$data['pay_now']      = trim((string) $row['token_amount']) . ' ' . strtoupper((string) $row['token']);
 			}
 		}
 
