@@ -6,7 +6,7 @@
  * operation_id, checkout_url, token, network, sandbox, token_amount and the
  * conversion context, plus the resolved payment_status.
  */
-class ModelExtensionPaymentAnneePay extends Model {
+class ModelExtensionPaymentAneePay extends Model {
 	/**
 	 * Store the payment + conversion context for an order.
 	 *
