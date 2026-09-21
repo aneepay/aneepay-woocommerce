@@ -198,12 +198,105 @@ class Ps_Aneepay extends PaymentModule {
 
 		$links = $this->context->link;
 
-		$option = new PaymentOption();
+		$option = $this->newPaymentOption();
 		$option->setModuleName($this->name)
 			->setCallToActionText($this->l('Pay with crypto (USDT/USDC/DAI)'))
 			->setAction($links->getModuleLink($this->name, 'payment', array(), true));
 
+		$breakdown = $this->getCheckoutBreakdown();
+
+		if (null !== $breakdown) {
+			$this->context->smarty->assign('aneepay_breakdown', $breakdown);
+			$option->setAdditionalInformation($this->fetch('module:ps_aneepay/views/templates/hook/paymentOptions-additionalInformation.tpl'));
+		}
+
 		return array($option);
+	}
+
+	/**
+	 * Checkout conversion breakdown ("You will pay X USDT") data for the
+	 * payment method card. Returns null when there is no cart, a zero total,
+	 * or the rate cannot be resolved without a network request (avoid
+	 * blocking checkout).
+	 *
+	 * @return array|null
+	 */
+	protected function getCheckoutBreakdown() {
+		$cart = $this->context->cart;
+
+		if (!$cart || !(int) $cart->id) {
+			return null;
+		}
+
+		$total = (float) $cart->getOrderTotal(true, Cart::BOTH);
+
+		if ($total <= 0) {
+			return null;
+		}
+
+		$currency = new Currency((int) $cart->id_currency);
+
+		if (!Validate::isLoadedObject($currency)) {
+			$currency = $this->context->currency;
+		}
+
+		if (!Validate::isLoadedObject($currency)) {
+			return null;
+		}
+
+		$iso = (string) $currency->iso_code;
+
+		$api = $this->getApi();
+		$api->set_config('store_rate', $this->getStoreRate($iso));
+
+		$source = '';
+		$rate   = (new AneePayUsdConverter($api))->peek_fiat_per_usd($iso, $source);
+
+		if (null === $rate || $rate <= 0) {
+			return null;
+		}
+
+		$usd_amount   = $total / $rate;
+		$token_amount = ceil($usd_amount * 100) / 100;
+		$usd          = new Currency((int) Currency::getIdByIsoCode('USD'));
+		$usd_label    = Validate::isLoadedObject($usd)
+			? Tools::displayPrice($usd_amount, $usd)
+			: '$' . number_format($usd_amount, 2, '.', '');
+
+		if ('manual' === $source) {
+			$rate_source = $this->l('Rate from shop settings.');
+		} elseif ('store' === $source) {
+			$rate_source = $this->l('Rate: PrestaShop currency table.');
+		} else {
+			$rate_source = $this->l('Rate: ECB / Frankfurter (cached).');
+		}
+
+		return array(
+			'token_amount' => number_format($token_amount, 2, '.', ''),
+			'token'        => strtoupper($api->get_token()),
+			'order_label'  => Tools::displayPrice($total, $currency),
+			'currency'     => $iso,
+			'usd_label'    => $usd_label,
+			'show_rate'    => 'USD' !== $iso,
+			'usd_per_fiat' => number_format(1 / $rate, 4, '.', ''),
+			'rate_source'  => $rate_source,
+		);
+	}
+
+	/**
+	 * PaymentOption moved into a namespace in PS 1.7.4+; the legacy global
+	 * class only exists on older 1.7.x. Resolve whichever is available.
+	 *
+	 * @return PaymentOption|\PaymentOption
+	 */
+	protected function newPaymentOption() {
+		$class = 'PrestaShop\\PrestaShop\\Core\\Payment\\PaymentOption';
+
+		if (!class_exists($class)) {
+			$class = 'PaymentOption';
+		}
+
+		return new $class();
 	}
 
 	/**
